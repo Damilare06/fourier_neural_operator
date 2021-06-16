@@ -15,9 +15,13 @@ from functools import reduce
 from functools import partial
 from timeit import default_timer
 from utilities3 import *
+import torch.fft
 
 torch.manual_seed(0)
 np.random.seed(0)
+print(torch.__version__)
+# Run with python3.8 fourier_1d.py 
+
 
 
 ################################################################
@@ -214,7 +218,7 @@ for ep in range(epochs):
     t2 = default_timer()
     print(ep, t2-t1, train_mse, train_l2, test_l2)
 
-# torch.save(model, 'model/ns_fourier_burgers')
+torch.save(model, 'model/ns_fourier_burgers')
 pred = torch.zeros(y_test.shape)
 index = 0
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
