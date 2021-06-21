@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from fourier_1d_module import * 
 from utilities3 import *
 
-def mse_attack(model, X, y, epsilon=0.2, alpha=1e-2, num_iter=40):
+def mse_attack(model, X, y, epsilon=0.02, alpha=1e-3, num_iter=40):
     """ 
         Construct PGD-like MSE attacks on X"
     """
@@ -21,7 +21,7 @@ def mse_attack(model, X, y, epsilon=0.2, alpha=1e-2, num_iter=40):
     for t in range(num_iter):
         loss = F.mse_loss(model(X + delta).squeeze(), y)
         loss.backward()
-        delta.data = (delta + alpha*delta.grad.detach().sign()).clamp(-epsilon,epsilon)
+        delta.data = (delta + X.shape[0]*alpha*delta.grad.detach().sign()).clamp(-epsilon,epsilon) #TODO: migth have to change this
         delta.grad.zero_()
     return delta.detach()
 
@@ -36,7 +36,7 @@ def main() -> None:
     s = h
 
     batch_size = 1 # 20
-    debug = True
+    debug = False #True
 
     # read data
     # ... of the shape (number of samples, grid size)
@@ -60,9 +60,9 @@ def main() -> None:
     fmodel = PyTorchModel(model, bounds=(-1e10, 1e10), preprocessing=preprocessing)
 
     # Evaluation - the foolbox accuracy loss is for classification
-    myloss = LpLoss(size_average=False)
+    # myloss = LpLoss(size_average=False)
 
-    test_l2 = 0.0
+    # test_l2 = 0.0
     pred = torch.zeros(y_test.shape)
     index = 0
     test_mse = 0
@@ -73,15 +73,15 @@ def main() -> None:
             out = model(x)
             pred[index] = out.squeeze()
 
-            test_l2 += myloss(out.view(1, -1), y.view(1, -1)).item()
+            # test_l2 += myloss(out.view(1, -1), y.view(1, -1)).item()
             mse = F.mse_loss(out.view(batch_size, -1), y.view(batch_size, -1), reduction='mean')            
             test_mse += mse.item()
 
             index = index + 1
-    test_l2 /= ntest
-    test_mse /= ntest
+    # test_l2 /= ntest
     # print(f"test_l2 loss: {test_l2 * 100 :.4f} %")
-    print(f"test_mse loss: {test_mse * 100 :.4f} %")
+    test_mse /= ntest
+    print(f"test_mse loss before attack: {test_mse :.6f} ")
 
     # Apply the attack
     # attacks = [
@@ -92,6 +92,7 @@ def main() -> None:
     #     fa.LinfDeepFoolAttack(),    # ValueError: expected the model output to have atleast 2 classes, got 1
     # ]
     attack = fa.LinfAdditiveUniformNoiseAttack()
+    # this attack can be substituted for a more straightforward implementation
     epsilons = [
         0.0,
         0.0002,
@@ -107,9 +108,9 @@ def main() -> None:
         0.5,
         1.0,
     ]
-    print("epsilons")
-    print(epsilons)
-    print("")
+    # print("epsilons")
+    # print(epsilons)
+    # print("")
 
     attack_success = np.zeros((1, len(epsilons), len(x_test)), dtype=bool)
     x_test, y_test = x_test.cuda(), y_test.cuda()
@@ -118,7 +119,7 @@ def main() -> None:
     # compute the regression error for the fmodel
     out_test = fmodel(x_test).squeeze()
 
-    clean_err = F.mse_loss(y_test.raw, out_test.raw)
+    clean_err = F.mse_loss(out_test.raw, y_test.raw)
     print(f"mse error: {clean_err :.4f} ")
     # clean_acc = torch.exp(-clean_err)
     # print(f"clean_acc: {clean_acc :.4f} ")
@@ -131,12 +132,12 @@ def main() -> None:
     # Does this make any sense? adding this noise to the input? Wouldnt we have to train on the MSE loss
 
     # TODO: Perturb the input (delta must < epsilon) and Train the MSE Loss on it, clip afterward
+    delta = mse_attack(model, x_test.raw, y_test.raw, epsilon=0.1, alpha=1e4, num_iter=500)
     if debug:   print(type(y_test.raw), (y_test.raw).shape)
-    delta = mse_attack(model, x_test.raw, y_test.raw, epsilon=0.2, alpha=1e-2)
     if debug:   print(type(delta), (delta).shape)
 
     y_pred = model(x_test.raw + delta).squeeze()
-    pert_err = F.mse_loss(y_test.raw, y_pred)
+    pert_err = F.mse_loss(y_pred, y_test.raw)
     print(f"perturbed mse error: {pert_err :.4f} ")
 
     # # Automatically compute the robust accuracy
