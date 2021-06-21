@@ -1,21 +1,34 @@
 """ Simple attack showing the Burgers 1d model attack for different epsolons vs accuracy"""
 
 # run with python3.8 single_attack_foolbox.py 
+from numpy import exp
 import torch
 import torchvision.models as models
-import foolbox
 from foolbox import PyTorchModel, accuracy, samples
+from foolbox.distances import linf
 import foolbox.attacks as fa
 import eagerpy as ep
 import torch.nn.functional as F
 from fourier_1d_module import * 
 from utilities3 import *
 
+def mse_attack(model, X, y, epsilon=0.2, alpha=1e-2, num_iter=40):
+    """ 
+        Construct PGD-like MSE attacks on X"
+    """
+    delta = torch.zeros_like(X, requires_grad=True)
+
+    for t in range(num_iter):
+        loss = F.mse_loss(model(X + delta).squeeze(), y)
+        loss.backward()
+        delta.data = (delta + alpha*delta.grad.detach().sign()).clamp(-epsilon,epsilon)
+        delta.grad.zero_()
+    return delta.detach()
+
+
 def main() -> None:
 
-    ################################################################
     #  configurations
-    ################################################################
     ntest = 100
 
     sub = 2**3 # subsampling rate
@@ -23,11 +36,10 @@ def main() -> None:
     s = h
 
     batch_size = 1 # 20
-    ################################################################
-    # read data
-    ################################################################
+    debug = True
 
-    # Data is of the shape (number of samples, grid size)
+    # read data
+    # ... of the shape (number of samples, grid size)
     dataloader = MatReader('data/burgers_data_R10.mat')
     x_data = dataloader.read_field('a')[:,::sub]
     y_data = dataloader.read_field('u')[:,::sub]
@@ -42,18 +54,12 @@ def main() -> None:
 
     test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
 
-    ################################################################
     # load and initialize the model
-    ################################################################
-
     model = torch.load('model/ns_fourier_burgers').eval()
     preprocessing =  dict(mean=[0.485], std=[0.229], axis=-1)
-    fmodel = PyTorchModel(model, bounds=(-1, 1), preprocessing=preprocessing)
+    fmodel = PyTorchModel(model, bounds=(-1e10, 1e10), preprocessing=preprocessing)
 
-    ################################################################
     # Evaluation - the foolbox accuracy loss is for classification
-    ################################################################
-
     myloss = LpLoss(size_average=False)
 
     test_l2 = 0.0
@@ -74,17 +80,18 @@ def main() -> None:
             index = index + 1
     test_l2 /= ntest
     test_mse /= ntest
-    print(f"test_l2 loss: {test_l2 * 100 :.4f} %")
+    # print(f"test_l2 loss: {test_l2 * 100 :.4f} %")
     print(f"test_mse loss: {test_mse * 100 :.4f} %")
 
-
-    ################################################################
     # Apply the attack
-    ################################################################
-    attacks = [
-        fa.LinfPGD(),
-        # fa.LinfAdditiveUniformNoiseAttack(),
-    ]
+    # attacks = [
+    #     fa.FGSM(),    # Crossentropy Error
+    #     fa.LinfPGD(),   # Crossentropy Error
+    #     fa.LinfBasicIterativeAttack(),    # Crossentropy Error
+    #     fa.LinfAdditiveUniformNoiseAttack(),
+    #     fa.LinfDeepFoolAttack(),    # ValueError: expected the model output to have atleast 2 classes, got 1
+    # ]
+    attack = fa.LinfAdditiveUniformNoiseAttack()
     epsilons = [
         0.0,
         0.0002,
@@ -104,15 +111,33 @@ def main() -> None:
     print(epsilons)
     print("")
 
-    attack_success = np.zeros((len(attacks), len(epsilons), len(x_test)), dtype=bool)
+    attack_success = np.zeros((1, len(epsilons), len(x_test)), dtype=bool)
     x_test, y_test = x_test.cuda(), y_test.cuda()
     x_test, y_test = ep.astensors(x_test, y_test)
 
-    # for i, attack in enumerate(attacks):
-    #     _, _, success = attack(model, x_test, y_test, epsilons=epsilons)
-    #     _, _, success = attack(fmodel, x_test, y_test, epsilons=epsilons)
+    # compute the regression error for the fmodel
+    out_test = fmodel(x_test).squeeze()
 
-    # raw_advs, clipped_advs, success = attack(fmodel, images, labels, epsilons=epsilons)
+    clean_err = F.mse_loss(y_test.raw, out_test.raw)
+    print(f"mse error: {clean_err :.4f} ")
+    # clean_acc = torch.exp(-clean_err)
+    # print(f"clean_acc: {clean_acc :.4f} ")
+    
+    # _, clipped, _ = attack(fmodel, x_test, y_test, epsilons=epsilons)
+
+
+    # TODO: Perturb the input & infer
+    # Get the last 100 test set, add gaussian noise to it and draw some inference
+    # Does this make any sense? adding this noise to the input? Wouldnt we have to train on the MSE loss
+
+    # TODO: Perturb the input (delta must < epsilon) and Train the MSE Loss on it, clip afterward
+    if debug:   print(type(y_test.raw), (y_test.raw).shape)
+    delta = mse_attack(model, x_test.raw, y_test.raw, epsilon=0.2, alpha=1e-2)
+    if debug:   print(type(delta), (delta).shape)
+
+    y_pred = model(x_test.raw + delta).squeeze()
+    pert_err = F.mse_loss(y_test.raw, y_pred)
+    print(f"perturbed mse error: {pert_err :.4f} ")
 
     # # Automatically compute the robust accuracy
     # robust_accuracy = 1 - success.float32().mean(axis=-1)
