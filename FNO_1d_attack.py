@@ -6,7 +6,7 @@
 import torch
 import torchvision.models as models
 import torch.nn.functional as F
-from fourier_1d_module import * 
+from fourier_attack_module import * 
 from utilities3 import *
 
 def mse_attack(model, X, y, epsilon=0.1, alpha=1e-5, num_iter=1):
@@ -157,8 +157,8 @@ def main() -> None:
     test_mse /= ntest
     # show_burgers(y_test, 'y_test')
     # show_burgers(pred, 'y_pred')
-    show_burgers_overlap(y_test, pred, 'y_test', 'y_pred')
-    plt.show()
+    # show_burgers_overlap(y_test, pred, 'y_test', 'y_pred')
+    # plt.show()
     print(f"test_mse loss before attack: {test_mse :.6f} ")
 
     # Comment: alpha = step size, epsilon = perturbation range 
