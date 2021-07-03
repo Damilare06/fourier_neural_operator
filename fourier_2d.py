@@ -44,6 +44,8 @@ class SpectralConv2d(nn.Module):
 
     # Complex multiplication
     def compl_mul2d(self, input, weights):
+        print("ABJ",input.shape, weights.shape)
+        exit()
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
@@ -158,13 +160,26 @@ s = h
 # load data and data normalization
 ################################################################
 reader = MatReader(TRAIN_PATH)
-x_train = reader.read_field('coeff')[:ntrain,::r,::r][:,:s,:s]
-y_train = reader.read_field('sol')[:ntrain,::r,::r][:,:s,:s]
+# x_train = reader.read_field('coeff')[:ntrain,::r,::r][:,:s,:s]
+x_train = reader.read_field('coeff')[:,:,:][:,:,:]
+x_train = x_train[:ntrain,::r,::r][:,:s,:s]
 
+# y_train = reader.read_field('sol')[:ntrain,::r,::r][:,:s,:s]
+y_train = reader.read_field('sol')[:,:,:][:,:,:]
+y_train = y_train[:ntrain,::r,::r][:,:s,:s]
+
+print("ABJ")
 reader = MatReader(TEST_PATH)
-x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
-y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+# x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
+x_test = reader.read_field('coeff')[:,:,:][:,:,:]
+x_test = x_test[:ntest,::r,::r][:,:s,:s]
 
+print("ABJ")
+# y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+y_test = reader.read_field('sol')[:,:,:][:,:,:]
+y_test = y_test[:ntest,::r,::r][:,:s,:s]
+
+print("ABJ")
 x_normalizer = UnitGaussianNormalizer(x_train)
 x_train = x_normalizer.encode(x_train)
 x_test = x_normalizer.encode(x_test)

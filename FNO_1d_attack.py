@@ -59,8 +59,10 @@ def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
     return max_delta
 
 
-def epoch_adversarial(model, loader, attack, attack_name, *args):
+def epoch_adversarial(model, loader, attack, attack_name, delta_arr, *args):
     total_loss = 0.
+    index = 0
+
     for X, y in loader:
         X, y = X.cuda(), y.cuda()
         delta = attack(model, X, y.squeeze(), *args)
@@ -68,9 +70,13 @@ def epoch_adversarial(model, loader, attack, attack_name, *args):
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         
         total_loss += loss
+        delta_arr[index,:] = delta
+        index += 1
 
+    print("delta has shape: ", delta_arr.shape)
     output =  total_loss / len(loader.dataset)
     print(f"{attack_name} error: {output :.6f} ")
+    # scipy.io.savemat('pred/delta_arr.mat', mdict={'delta': delta.cpu().numpy()})
     return output
 
 def show_burgers_overlap(var1, var2, key1, key2):
@@ -166,8 +172,10 @@ def main() -> None:
     num_iter = 10
     restarts = 10
     alpha = eps/ num_iter
+    delta_arr = torch.zeros_like(x_test)
 
-    # epoch_adversarial(model, test_loader, mse_attack, "mse_attack", eps, alpha, num_iter)
+    # Should we perturb the location as well? x[, 1]
+    epoch_adversarial(model, test_loader, mse_attack, "mse_attack", delta_arr, eps, alpha, num_iter)
     # epoch_adversarial(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", eps, alpha, num_iter, restarts)
     # epoch_adversarial(model, test_loader, mse_linf_attack, "mse_linf_attack", eps, alpha, num_iter)
 

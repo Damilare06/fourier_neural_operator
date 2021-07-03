@@ -4,7 +4,8 @@ This file is the Fourier Neural Operator for 3D problem such as the Navier-Stoke
 which takes the 2D spatial + 1D temporal equation directly as a 3D problem
 """
 
-
+import gc
+from numpy.core.fromnumeric import shape
 import torch
 import numpy as np
 import torch.nn as nn
@@ -23,6 +24,7 @@ import scipy.io
 torch.manual_seed(0)
 np.random.seed(0)
 
+debug = False#True
 
 ################################################################
 # 3d fourier layers
@@ -50,14 +52,17 @@ class SpectralConv3d(nn.Module):
 
     # Complex multiplication
     def compl_mul3d(self, input, weights):
+        if debug:   print("ABJ x, w", input.shape, weights.shape)
         # (batch, in_channel, x,y,t ), (in_channel, out_channel, x,y,t) -> (batch, out_channel, x,y,t)
         return torch.einsum("bixyz,ioxyz->boxyz", input, weights)
 
     def forward(self, x):
         batchsize = x.shape[0]
+        if debug:   print("ABJ: before fft: ", x.shape)
         #Compute Fourier coeffcients up to factor of e^(- something constant)
         x_ft = torch.fft.rfftn(x, dim=[-3,-2,-1])
 
+        if debug:   print("ABJ: fft: ", x_ft.shape)
         # Multiply relevant Fourier modes
         out_ft = torch.zeros(batchsize, self.out_channels, x.size(-3), x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
         out_ft[:, :, :self.modes1, :self.modes2, :self.modes3] = \
@@ -115,10 +120,13 @@ class FNO3d(nn.Module):
 
     def forward(self, x):
         batchsize = x.shape[0]
+        if debug:   print("ABJ input shape: ", x.shape)
         size_x, size_y, size_z = x.shape[1], x.shape[2], x.shape[3]
 
         x = self.fc0(x)
+        if debug:   print("ABJ after fc0: ", x.shape)
         x = x.permute(0, 4, 1, 2, 3)
+        if debug:   print("ABJ before conv0: ", x.shape, self.width)
 
         x1 = self.conv0(x)
         x2 = self.w0(x.view(batchsize, self.width, -1)).view(batchsize, self.width, size_x, size_y, size_z)
@@ -147,12 +155,13 @@ class FNO3d(nn.Module):
 # configs
 ################################################################
 
+# TRAIN_PATH = 'data/NavierStokes_V1e-5_N1200_T20.mat' # choose a smaller file
 TRAIN_PATH = 'data/ns_V1e-3_N5000_T50.mat'
 # TRAIN_PATH = 'data/ns_data_V100_N1000_T50_1.mat'
 # TEST_PATH = 'data/ns_data_V100_N1000_T50_2.mat'
 
-ntrain = 1000
-ntest = 200
+ntrain = 450    # 1000
+ntest = 50     # 200
 
 modes = 8
 width = 20
@@ -167,12 +176,12 @@ scheduler_gamma = 0.5
 
 print(epochs, learning_rate, scheduler_step, scheduler_gamma)
 
-# path = 'test'
-# # path = 'ns_fourier_V100_N'+str(ntrain)+'_ep' + str(epochs) + '_m' + str(modes) + '_w' + str(width)
-# path_model = 'model/'+path
-# path_train_err = 'results/'+path+'train.txt'
-# path_test_err = 'results/'+path+'test.txt'
-# path_image = 'image/'+path
+path = 'navier_test'
+# path = 'ns_fourier_V100_N'+str(ntrain)+'_ep' + str(epochs) + '_m' + str(modes) + '_w' + str(width)
+path_model = 'model/'+path
+path_train_err = 'results/'+path+'train.txt'
+path_test_err = 'results/'+path+'test.txt'
+path_image = 'image/'+path
 
 
 runtime = np.zeros(2, )
@@ -182,7 +191,7 @@ t1 = default_timer()
 sub = 1
 S = 64 // sub
 T_in = 10
-T = 40
+T = 30
 
 ################################################################
 # load data
@@ -190,15 +199,25 @@ T = 40
 
 reader = MatReader(TRAIN_PATH)
 train_buff = reader.read_field('u')[:,:,:,:]
+print(train_buff.shape)
 train_a = train_buff[:ntrain,::sub,::sub,:T_in]
-# train_a = train_buff[:ntrain,::sub,::sub,:T_in]
 train_u = train_buff[:ntrain,::sub,::sub,T_in:T+T_in]
 
 test_a = train_buff[-ntest:,::sub,::sub,:T_in]
 test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
 
+# train_a = reader.read_field('u')[:ntrain,::sub,::sub,:T_in]
+# train_u = reader.read_field('u')[:ntrain,::sub,::sub,T_in:T+T_in]
+
+print("ABJ")
+# test_a = reader.read_field('u')[-ntest:,::sub,::sub,:T_in]
+# test_u = reader.read_field('u')[-ntest:,::sub,::sub,T_in:T+T_in]
+
+del train_buff
+del reader
+gc.collect()
+
 print(train_u.shape, train_u.dtype)
-print(test_u.shape)
 assert (S == train_u.shape[-2])
 assert (T == train_u.shape[-1])
 
@@ -209,16 +228,12 @@ test_a = a_normalizer.encode(test_a)
 
 y_normalizer = UnitGaussianNormalizer(train_u)
 train_u = y_normalizer.encode(train_u)
-print("ABJ 0.02", train_a.shape, test_a.shape)
 
-# train_a = train_a.reshape(ntrain,S,S,1,T_in).repeat([1,1,1,T,1])
-# train_a = train_a.reshape(ntrain,S,S,1,T_in).repeat([1,1,1,T_in,1])
-train_a = train_a.reshape(ntrain,S,S,1,T_in).repeat([1,1,1,39,1])
 print("ABJ 0.03", train_a.shape, test_a.shape)
+train_a = train_a.reshape(ntrain,S,S,1,T_in).repeat([1,1,1,T,1])
 test_a = test_a.reshape(ntest,S,S,1,T_in).repeat([1,1,1,T,1])
 print("ABJ 0.04", train_a.shape, test_a.shape)
 
-print("ABJ 0.1")
 # pad locations (x,y,t)
 gridx = torch.tensor(np.linspace(0, 1, S), dtype=torch.float)
 gridx = gridx.reshape(1, S, 1, 1, 1).repeat([1, 1, S, T, 1])
@@ -227,17 +242,16 @@ gridy = gridy.reshape(1, 1, S, 1, 1).repeat([1, S, 1, T, 1])
 gridt = torch.tensor(np.linspace(0, 1, T+1)[1:], dtype=torch.float)
 gridt = gridt.reshape(1, 1, 1, T, 1).repeat([1, S, S, 1, 1])
 
-print("ABJ 0.2")
 train_a = torch.cat((gridx.repeat([ntrain,1,1,1,1]), gridy.repeat([ntrain,1,1,1,1]),
                        gridt.repeat([ntrain,1,1,1,1]), train_a), dim=-1)
 test_a = torch.cat((gridx.repeat([ntest,1,1,1,1]), gridy.repeat([ntest,1,1,1,1]),
                        gridt.repeat([ntest,1,1,1,1]), test_a), dim=-1)
 
-print("ABJ 0.3")
 train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(train_a, train_u), batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
 
 t2 = default_timer()
+gc.collect()
 
 print('preprocessing finished, time used:', t2-t1)
 device = torch.device('cuda')
@@ -245,9 +259,7 @@ device = torch.device('cuda')
 ################################################################
 # training and evaluation
 ################################################################
-print("ABJ 0.0")
 model = FNO3d(modes, modes, modes, width).cuda()
-print("ABJ 0.1")
 # model = torch.load('model/ns_fourier_V100_N1000_ep100_m8_w20')
 
 print(count_params(model))
@@ -256,10 +268,10 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step,
 
 
 myloss = LpLoss(size_average=False)
-print("ABJ 0.0")
+if debug:   print("ABJ 0.0")
 y_normalizer.cuda()
 for ep in range(epochs):
-    print("ABJ 0.1")
+    if debug:   print("ABJ 0.1")
     model.train()
     t1 = default_timer()
     train_mse = 0
@@ -268,7 +280,11 @@ for ep in range(epochs):
         x, y = x.cuda(), y.cuda()
 
         optimizer.zero_grad()
-        out = model(x).view(batch_size, S, S, T)
+        # out = model(x).view(batch_size, S, S, T)
+        out = model(x)
+        if debug:   print("ABJ 0.25")
+        out = out.view(batch_size, S, S, T)
+        if debug:   print("ABJ 0.3")
 
         mse = F.mse_loss(out, y, reduction='mean')
         # mse.backward()
@@ -278,6 +294,9 @@ for ep in range(epochs):
         l2 = myloss(out.view(batch_size, -1), y.view(batch_size, -1))
         l2.backward()
 
+        if debug:   print("ABJ 0.4")
+        optimizer.step()
+        if debug:   print("ABJ 0.5")
         optimizer.step()
         train_mse += mse.item()
         train_l2 += l2.item()
@@ -300,7 +319,7 @@ for ep in range(epochs):
 
     t2 = default_timer()
     print(ep, t2-t1, train_mse, train_l2, test_l2)
-# torch.save(model, path_model)
+torch.save(model, path_model)
 
 
 pred = torch.zeros(test_u.shape)
