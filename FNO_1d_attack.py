@@ -36,7 +36,6 @@ def mse_linf_attack(model, X, y, epsilon=0.02, alpha=1e-3, num_iter=40):
         delta.grad.zero_()
     return delta.detach()
 
-
 def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
     max_loss = torch.zeros(y.shape[0]).cuda()
     max_delta = torch.zeros_like(X.squeeze())
@@ -59,8 +58,7 @@ def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
 
     return max_delta
 
-
-def epoch_adversarial(model, loader, attack, attack_name, xtest, *args):
+def get_proxy_mse(model, loader, attack, attack_name, xtest, *args):
     total_loss = 0.
     index = 0
     a_plus_delta = torch.zeros_like(xtest)
@@ -69,10 +67,13 @@ def epoch_adversarial(model, loader, attack, attack_name, xtest, *args):
     for X, y in loader:
         X, y = X.cuda(), y.cuda()
         delta = attack(model, X, y.squeeze(), *args)
+
+        # zero out the loc_delta index
         if 'rand' in attack_name:
             delta[:,1] = 0
         else:
             delta[:,:,1] = 0
+
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         
@@ -81,11 +82,13 @@ def epoch_adversarial(model, loader, attack, attack_name, xtest, *args):
         delta_arr[index,:,:] = delta
 
         index += 1
+    # output x_new = [xtest+delta, loc]
+
 
     output =  total_loss / len(loader.dataset)
-    print(f"{attack_name} error: {output :.6f} ")
+    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {output :.6f} ")
 
-    return delta_arr[:,:,0].squeeze(), a_plus_delta[:,:,0].squeeze()
+    return delta_arr[:,:,0].squeeze(), a_plus_delta
 
 def show_burgers_overlap(var1, var2, key1, key2):
     cm = plt.cm.get_cmap('viridis')
@@ -124,6 +127,25 @@ def show_burgers(var, key):
         plt.setp(p, 'facecolor', cm(c))    
     plt.show()
 
+# ground_truth_mse = MSE(model(a+delta), solver(a+delta))
+def get_ground_truth_mse(model, ap_delta, file, var, ntest, sub):
+    dataloader = MatReader(file)
+    u_delta = dataloader.read_field(var)[:, ::sub].cuda()
+
+    # iterate through ap_delta
+    total_mse = 0
+    for i in range(ntest):
+        apd = ap_delta[i, :, :]
+        apd = torch.unsqueeze(apd, 0)
+        apd = apd.cuda()
+        out = model(apd).squeeze()
+
+        mse = F.mse_loss(out.view(1, -1), u_delta[i].view(1, -1), reduction='mean')            
+        total_mse += mse.item()
+
+    total_mse /= ntest
+    print (f"The ground truth MSE => MSE(model(a+delta), solver(a+delta)) : {total_mse :.6f}")
+
 def main() -> None:
     #  configurations
     ntest = 100
@@ -133,12 +155,12 @@ def main() -> None:
 
     batch_size = 1 # 20
     debug = False 
-    evaluate = False
+    evaluate = True # False
 
     # read data of the shape (number of samples, grid size)
-    # dataloader = MatReader('data/burgers_data_R10.mat')
     if evaluate:
-        dataloader = MatReader('data/burgers_N2048_G8192.mat')
+        # dataloader = MatReader('data/burgers_N2048_G8192.mat')
+        dataloader = MatReader('data/burgers_N2048_G8192_inf_2.mat')
         x_data_full = dataloader.read_field('a')[:,:]
         x_test = x_data_full[-ntest:,::sub]
         y_test = dataloader.read_field('u')[-ntest:,::sub]
@@ -151,7 +173,6 @@ def main() -> None:
         test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
 
         # load and initialize the model
-        # model = torch.load('model/ns_fourier_burgers').eval()
         model = torch.load('model/ns_N2048_G8192_burgers').eval()
 
         # Evaluation - the foolbox accuracy loss is for classification
@@ -170,24 +191,20 @@ def main() -> None:
 
                 index = index + 1
         test_mse /= ntest
-        # show_burgers(y_test, 'y_test')
-        # show_burgers(pred, 'y_pred')
-        # show_burgers_overlap(y_test, pred, 'y_test', 'y_pred')
-        # plt.show()
-        print(f"test_mse loss before attack: {test_mse :.9f} ")
+        print(f"The test_mse loss before attack := {test_mse :.9f} ")
 
-        # Comment: alpha = step size, epsilon = perturbation range 
+        # alpha = step size, epsilon = perturbation range 
         eps = 0.1
         num_iter = 10
         restarts = 10
         alpha = eps/ num_iter
-        # delta_arr = torch.zeros_like(x_test)
 
-        # Get delta, a + delta
-        delta_out, a_plus_delta = epoch_adversarial(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+        # proxy_mse := MSE(model(a + delta), model(a))
+        delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+        a_plus_delta = ap_delta[:,:,0].squeeze()
 
-        # epoch_adversarial(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
-        # epoch_adversarial(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
+        # get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
+        # get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
 
         # POST-PROCESSING
         a_p_delta = x_data_full[-ntest:,:]
@@ -195,31 +212,25 @@ def main() -> None:
 
         a_p_delta[:,::sub] = a_plus_delta
         delta[:,::sub] = delta_out
-        # print("ABJ: ", a_p_delta.shape, delta.shape)
+        # print("ABJ: ", delta.shape, delta_out.shape)
 
-        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092.mat', mdict={'a_plus_delta': a_p_delta.cpu().numpy(),'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy()})
+        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_inf_2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy()})
 
-    # Read both files, get y_pred and u from second file
+        # plt.plot(x_test[0,:,0])
+        # plt.show()
+        # plt.plot(pred[0,:])
+        # plt.show()
+        # plt.plot(y_test[0,:])
+        # plt.show()
+        plt.plot(a_p_delta[0,:99])
+        plt.show()
+
+    # Ground_truth_mse = MSE(model(a+delta), solver(a+delta))
+    get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
 
 
-    ##################################################################
-    # second part, compare the MSE of y_pred and u (from the gen file)
-    ##################################################################
-    dataloader_1 = MatReader('pred/a_p_delta_burger_N2048_G8092.mat')
-    y_pred = dataloader_1.read_field('y_pred')[:,:]
-    dataloader_2 = MatReader('data/burgers_N2048_G8192_gen.mat')
-    u_delta = dataloader_2.read_field('u')[:, ::sub]
 
-    print(y_pred.shape)
-    print(u_delta.shape)
-
-    total_mse = 0
-    for i, yp in enumerate(y_pred):
-        mse = F.mse_loss(yp.view(1, -1), u_delta[i].view(1, -1), reduction='mean')            
-        total_mse += mse.item()
-
-    total_mse /= ntest
-    print (total_mse)
 
 if __name__ == "__main__":
     main()

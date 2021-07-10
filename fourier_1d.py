@@ -133,7 +133,7 @@ ntest = 100
 
 sub = 2**3 #subsampling rate
 h = 2**13 // sub #total grid size divided by the subsampling rate
-s = h
+s = h   # 1024
 
 batch_size = 20
 learning_rate = 0.001
@@ -151,9 +151,10 @@ width = 64
 ################################################################
 
 # Data is of the shape (number of samples, grid size)
-dataloader = MatReader('data/burgers_data_R10.mat')
+# dataloader = MatReader('data/burgers_data_R10.mat')
+dataloader = MatReader('data/burgers_N2048_G8192.mat')
 x_data = dataloader.read_field('a')[:,::sub]
-y_data = dataloader.read_field('u')[:,::sub]
+y_data = dataloader.read_field('u')[:,::sub].squeeze()
 
 x_train = x_data[:ntrain,:]
 y_train = y_data[:ntrain,:]
@@ -190,8 +191,8 @@ for ep in range(epochs):
         x, y = x.cuda(), y.cuda()
 
         optimizer.zero_grad()
-        out = model(x)
-
+        out = model(x).squeeze()
+        # print("ABJ: ", out.shape, y.shape)
         mse = F.mse_loss(out.view(batch_size, -1), y.view(batch_size, -1), reduction='mean')
         # mse.backward()
         l2 = myloss(out.view(batch_size, -1), y.view(batch_size, -1))
@@ -218,7 +219,8 @@ for ep in range(epochs):
     t2 = default_timer()
     print(ep, t2-t1, train_mse, train_l2, test_l2)
 
-torch.save(model, 'model/ns_fourier_burgers')
+# torch.save(model, 'model/ns_fourier_burgers')
+torch.save(model, 'model/ns_N2048_G8192_burgers')
 pred = torch.zeros(y_test.shape)
 index = 0
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
