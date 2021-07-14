@@ -155,9 +155,6 @@ def main() -> None:
     reader = MatReader(TEST_PATH)
     x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
-    # x_test = reader.read_field('coeff')[-ntest:,::r,::r][:,:s,:s]
-    # y_test = reader.read_field('sol')[-ntest:,::r,::r][:,:s,:s]
-
 
     x_normalizer = UnitGaussianNormalizer(x_test)
     x_test = x_normalizer.encode(x_test)
@@ -213,9 +210,9 @@ def main() -> None:
     restarts = 10
     alpha = eps/ num_iter
 
-    delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
-    # get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", eps, alpha, num_iter, restarts)
-    # get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", eps, alpha, num_iter)
+    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
+    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
     a_plus_delta = ap_delta[:,:,:,0].squeeze()
 
     a_p_delta = reader.read_field('coeff')[:ntest,:,:]
