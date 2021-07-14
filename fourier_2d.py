@@ -21,7 +21,10 @@ from utilities3 import *
 torch.manual_seed(0)
 np.random.seed(0)
 
-
+import sys
+print(torch.__version__)
+print(sys.version)
+exit()
 ################################################################
 # fourier layer
 ################################################################
@@ -174,7 +177,8 @@ reader = MatReader(TEST_PATH)
 x_test = reader.read_field('coeff')[:,:,:][:,:,:]
 x_test = x_test[:ntest,::r,::r][:,:s,:s]
 
-print("ABJ")
+print("ABJ", x_test.shape)
+
 # y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
 y_test = reader.read_field('sol')[:,:,:][:,:,:]
 y_test = y_test[:ntest,::r,::r][:,:s,:s]

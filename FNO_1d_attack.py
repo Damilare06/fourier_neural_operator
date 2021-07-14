@@ -217,15 +217,6 @@ def main() -> None:
         scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_inf_2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
                 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy()})
 
-        # plt.plot(x_test[0,:,0])
-        # plt.show()
-        # plt.plot(pred[0,:])
-        # plt.show()
-        # plt.plot(y_test[0,:])
-        # plt.show()
-        plt.plot(a_p_delta[0,:99])
-        plt.show()
-
     # Ground_truth_mse = MSE(model(a+delta), solver(a+delta))
     get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
 
