@@ -22,6 +22,10 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 
+import sys
+print(torch.__version__)
+print(sys.version)
+# exit()
 ################################################################
 # fourier layer
 ################################################################
