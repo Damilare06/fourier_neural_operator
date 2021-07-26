@@ -147,7 +147,7 @@ def main() -> None:
 
     r = 5
     h = int(((421 - 1)/r) + 1)
-    s = h
+    s = h   # 85
 
     ################################################################
     # load data and data normalization
@@ -155,6 +155,7 @@ def main() -> None:
     reader = MatReader(TEST_PATH)
     x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+    print(x_test.shape, y_test.shape)
 
     x_normalizer = UnitGaussianNormalizer(x_test)
     x_test = x_normalizer.encode(x_test)
@@ -210,7 +211,7 @@ def main() -> None:
     restarts = 10
     alpha = eps/ num_iter
 
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+    delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
     a_plus_delta = ap_delta[:,:,:,0].squeeze()

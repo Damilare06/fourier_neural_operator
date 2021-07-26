@@ -178,6 +178,13 @@ def get_apd_pred(model, apd, y_test):
             pred[n] = out
     return pred
 
+def make_patch_spines_invisible(ax):
+    ax.set_frame_on(True)
+    ax.patch.set_visible(False)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+
 def main() -> None:
     #  configurations
     ntest = 100
@@ -202,7 +209,6 @@ def main() -> None:
         # dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
         dataloader2 = MatReader('data/burgers_N100_G1092_e01.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
-        # dataloader2 = MatReader('data/burgers_N100_G1092_attempt.mat')
         b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
         u_prime = dataloader2.read_field('u')[:ntest,::sub]
 
@@ -236,7 +242,7 @@ def main() -> None:
         print(f"The test_mse loss before attack := {test_mse :.9f} ")
 
         # alpha = step size, epsilon = perturbation range 
-        eps = 0.1
+        eps = 0.01
         num_iter = 10
         restarts = 10
         alpha = eps/ num_iter
@@ -261,44 +267,37 @@ def main() -> None:
 
         ##################################
         # Printing the inputs
-        ##################################
-        a_print = x_test[0,:, 0].squeeze()
-        # print(*a_print)
-        apd_print = a_plus_delta[0,:]
-        bj_print = b_j[0,:]
-        x_dim = [x for x in range(len(bj_print))]
-        print(apd_print.shape, a_print.shape, bj_print.shape)
-        # plt.plot(apd_print, label='a+delta')
-        # plt.plot(x_dim, a_print,label='a')
-        # plt.plot(bj_print, label='b_j')
-
-
+        # ##################################
         fig, ax1 = plt.subplots()
-        line1 = ax1.plot(a_print, label='a')
-        line2 = ax1.plot(apd_print, label='a+delta')
+        line1 = ax1.plot(x_test[0,:, 0].squeeze(), label='a')
+        line2 = ax1.plot(a_plus_delta[0,:], label='a+delta')
         ax2 = ax1.twinx()
-        line3 = ax2.plot(bj_print, c='green', label='b_j')
+        line3 = ax2.plot(b_j[0,:], c='green', label='b_j')
 
-        lines = line1 + line2 + line3
-        labels = [l.get_label() for l in lines]
-        ax1.legend(lines, labels)
-        # plt.legend(loc='lower right')
+        lines = line1 + line2 + line3 
+        ax1.legend(lines, [l.get_label() for l in lines], loc='lower right')
+        ax1.set_title(f'input plots with eps={eps}')
 
         ##################################
         # Printing the outputs
         ##################################
-        # a_plus_delta = torch.cat([a_plus_delta.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
-        # b_j_delta = torch.cat([b_j.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
-        # # print(a_plus_delta.shape, x_test.shape)
-        # apd_pred = get_apd_pred(model, a_plus_delta, y_test)
-        # bj_pred = get_apd_pred(model, b_j_delta, y_test)
+        a_plus_delta = torch.cat([a_plus_delta.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        b_j_delta = torch.cat([b_j.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        # print(a_plus_delta.shape, x_test.shape)
+        apd_pred = get_apd_pred(model, a_plus_delta, y_test)
+        bj_pred = get_apd_pred(model, b_j_delta, y_test)
 
-        # plt.plot(pred[0,:], label='model(a)')
-        # plt.plot(apd_pred[0,:], label='model(a+delta)')
-        # plt.plot(bj_pred[0,:], label='model(b_j)')
-        # plt.plot(u_prime[0,:], label='solver(b_j)') 
+        fig, ax1 = plt.subplots()
+        line1 = ax1.plot(pred[0,:], label='model(a)')
+        line2 = ax1.plot(apd_pred[0,:], label='model(a+delta)')
+        ax2 = ax1.twinx()
+        # ax3 = ax1.twinx()
+        line3 = ax2.plot(bj_pred[0,:], c='green', label='model(b_j)')
+        # line3 = ax2.plot(u_prime[0,:], c='red', label='solver(b_j)') 
 
-        # plt.legend(loc='lower right')
+        lines = line1 + line2 + line3 
+        ax1.legend(lines, [l.get_label() for l in lines], loc='lower right')
+        ax1.set_title(f'output plots with eps={eps}')
 
         plt.show()
 
