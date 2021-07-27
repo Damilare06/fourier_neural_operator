@@ -163,13 +163,8 @@ s = h
 # load data and data normalization
 ################################################################
 reader = MatReader(TRAIN_PATH)
-# x_train = reader.read_field('coeff')[:ntrain,::r,::r][:,:s,:s]
-x_train = reader.read_field('coeff')[:,:,:][:,:,:]
-x_train = x_train[:ntrain,::r,::r][:,:s,:s]
-
-# y_train = reader.read_field('sol')[:ntrain,::r,::r][:,:s,:s]
-y_train = reader.read_field('sol')[:,:,:][:,:,:]
-y_train = y_train[:ntrain,::r,::r][:,:s,:s]
+x_train = reader.read_field('coeff')[:ntrain,::r,::r][:,:s,:s]
+y_train = reader.read_field('sol')[:ntrain,::r,::r][:,:s,:s]
 
 print("ABJ")
 reader = MatReader(TEST_PATH)

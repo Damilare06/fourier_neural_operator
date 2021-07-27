@@ -157,6 +157,12 @@ def main() -> None:
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
     print(x_test.shape, y_test.shape)
 
+    # load a+delta data
+    dataloader2 = MatReader('data/darcy_r256_N100_2.mat')
+    x_prime = dataloader2.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
+    y_prime = dataloader2.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+
+
     x_normalizer = UnitGaussianNormalizer(x_test)
     x_test = x_normalizer.encode(x_test)
 
