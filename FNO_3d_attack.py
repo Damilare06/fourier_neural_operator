@@ -3,6 +3,7 @@
     Run with "python3.8 single_attack.py"
 """
 
+import gc
 import torch
 import torchvision.models as models
 import torch.nn.functional as F
@@ -59,49 +60,38 @@ def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
     return max_delta
 
 
-def get_proxy_mse(model, loader, attack, attack_name, x_test, *args):
-    index = 0
+def get_proxy_mse(model, loader, attack, attack_name, test_a, *args):
     total_loss = 0.
-    delta_arr = torch.zeros_like(x_test)
-    a_plus_delta = torch.zeros_like(x_test)
+    index = 0
+    delta_arr = torch.zeros_like(test_a)
+    a_plus_delta = torch.zeros_like(test_a)
 
     for X, y in loader:
         X, y = X.cuda(), y.cuda()
         delta = attack(model, X, y.squeeze(), *args)
-
-        # zero out the loc_delta index
-        if 'rand' in attack_name:
-            delta[:,:,1] = 0
-            delta[:,:,2] = 0
-        else:
-            delta[:,:,:,1] = 0
-            delta[:,:,:,2] = 0
-
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         
         total_loss += loss
-        a_plus_delta[index,:,:,:] = X + delta
-        delta_arr[index,:,:,:] = delta
-
-        index += 1
 
     output =  total_loss / len(loader.dataset)
-    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {output :.6f} ")
-
-    return delta_arr[:,:,:,0].squeeze(), a_plus_delta
+    print(f"{attack_name} error: {output :.6f} ")
+    return output
 
 def show_overlap(var1, var2, key1, key2):
     cm = plt.cm.get_cmap('viridis')
     var = [var1.numpy(), var2.numpy()]
     var = np.asarray(var)
-    var = var.reshape(var.shape[1], var.shape[2], var.shape[3], var.shape[0])
+    # print(var.shape)
+    var = var.reshape(var.shape[1], var.shape[2], var.shape[3], var.shape[4], var.shape[0])
+    # print(var.shape)
     key = [key1, key2]
 
     # Generate the data distribution
     fig, ax = plt.subplots()
-    ax.set_title(f"N = {var.shape[0]} of {key[0]} vs {key[1]} on {var.shape[1]} grid\n")
-    var_hist = var.reshape(var.shape[0] * var.shape[1] * var.shape[2], var.shape[3])
+    ax.set_title(f"N = {var.shape[0]} of {key[0]} vs {key[1]} on {var.shape[1]} X {var.shape[2]} grid\n")
+    var_hist = var.reshape(var.shape[0] * var.shape[1] * var.shape[2] * var.shape[3], var.shape[4])
+    print(var_hist.shape)
     ax.hist(var_hist, density=True, stacked=False, bins='auto', label=key)
     ax.set_xlabel(f"{key} distribution")
     ax.legend()
@@ -130,58 +120,72 @@ def main() -> None:
     ################################################################
     # configs
     ################################################################
-    TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
+    TEST_PATH = 'data/ns_V1e-3_N5000_T50.mat'
+    ntest = 200
 
-    ntrain = 1000
-    ntest = 100
+    modes = 8
+    width = 20
 
-    batch_size = 20
-    learning_rate = 0.001
+    batch_size = 10
 
     epochs = 500
-    step_size = 100
-    gamma = 0.5
+    learning_rate = 0.001
+    scheduler_step = 100
+    scheduler_gamma = 0.5
 
-    modes = 12
-    width = 32
+    # print(epochs, learning_rate, scheduler_step, scheduler_gamma)
 
-    r = 5
-    h = int(((421 - 1)/r) + 1)
-    s = h
+    sub = 1
+    S = 64 // sub
+    T_in = 10
+    T = 30
 
     ################################################################
     # load data and data normalization
     ################################################################
     reader = MatReader(TEST_PATH)
-    x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
-    y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+    train_buff = reader.read_field('u')[:,:,:,:]
+    # print(train_buff.shape)
 
-    x_normalizer = UnitGaussianNormalizer(x_test)
-    x_test = x_normalizer.encode(x_test)
+    test_a = train_buff[-ntest:,::sub,::sub,:T_in]
+    test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
 
-    y_normalizer = UnitGaussianNormalizer(y_test)
-    y_test = y_normalizer.encode(y_test)
 
-    grids = []
-    grids.append(np.linspace(0, 1, s))
-    grids.append(np.linspace(0, 1, s))
-    grid = np.vstack([xx.ravel() for xx in np.meshgrid(*grids)]).T
-    grid = grid.reshape(1,s,s,2)
-    grid = torch.tensor(grid, dtype=torch.float)
-    x_test = torch.cat([x_test.reshape(ntest,s,s,1), grid.repeat(ntest,1,1,1)], dim=3)
+    a_normalizer = UnitGaussianNormalizer(test_a)
+    test_a = a_normalizer.encode(test_a)
 
-    test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False)
+    y_normalizer = UnitGaussianNormalizer(test_u)
+    test_u = y_normalizer.encode(test_u)
+
+    test_a = test_a.reshape(ntest,S,S,1,T_in).repeat([1,1,1,T,1])
+
+    # pad locations (x,y,t)
+    gridx = torch.tensor(np.linspace(0, 1, S), dtype=torch.float)
+    gridx = gridx.reshape(1, S, 1, 1, 1).repeat([1, 1, S, T, 1])
+    gridy = torch.tensor(np.linspace(0, 1, S), dtype=torch.float)
+    gridy = gridy.reshape(1, 1, S, 1, 1).repeat([1, S, 1, T, 1])
+    gridt = torch.tensor(np.linspace(0, 1, T+1)[1:], dtype=torch.float)
+    gridt = gridt.reshape(1, 1, 1, T, 1).repeat([1, S, S, 1, 1])
+
+    test_a = torch.cat((gridx.repeat([ntest,1,1,1,1]), gridy.repeat([ntest,1,1,1,1]),
+                        gridt.repeat([ntest,1,1,1,1]), test_a), dim=-1)
+    print("ABJ 0.05", test_a.shape)
+    # exit()
+
+    test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
+
+    device = torch.device('cuda')
 
 
     ################################################################
     # training and evaluation
     ################################################################
-    model = torch.load('model/ns_fourier_darcy').eval()
+    model = torch.load('model/navier_test').eval()
     print(count_params(model))
     
     # Evaluation - the foolbox accuracy loss is for classification
-    pred = torch.zeros(y_test.shape)
-    test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
+    pred = torch.zeros(test_u.shape)
+    test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=1, shuffle=False)
     index = 0
     test_mse = 0
     batch_size = 1
@@ -189,19 +193,22 @@ def main() -> None:
         for x, y in test_loader:
             x, y = x.cuda(), y.cuda()
 
-            out = model(x)
-            pred[index] = out.squeeze()
+            out = model(x).squeeze(axis=4).cpu()
+            out = y_normalizer.decode(out)
+            pred[index] = out
 
-            mse = F.mse_loss(out.view(batch_size, -1), y.view(batch_size, -1), reduction='mean')            
+            mse = F.mse_loss(out.cuda().view(batch_size, -1), y.view(batch_size, -1), reduction='mean')            
             test_mse += mse.item()
             # print(index, test_mse)
             index = index + 1
     test_mse /= ntest
     print(f"test_mse loss before attack: {test_mse :.6f} ")
+    # scipy.io.savemat('pred/navier_test.mat', mdict={'pred': pred.cpu().numpy()})
 
-    # show_burgers(y_test, 'y_test')
-    # show_burgers(pred, 'y_pred')
-    # show_overlap(y_test, pred, 'u_test', 'u_pred')
+    # show_navier(test_u, 'y_test')
+    # show_navier(pred, 'y_pred')
+    print("ABJ: ", test_u.shape, pred.shape)
+    # show_overlap(test_u, pred, 'u_test', 'u_pred')
     # plt.show()
     
     # Comment: alpha = step size, epsilon = perturbation range 
@@ -210,20 +217,10 @@ def main() -> None:
     restarts = 10
     alpha = eps/ num_iter
 
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
-    a_plus_delta = ap_delta[:,:,:,0].squeeze()
+    get_proxy_mse(model, test_loader, mse_attack, "mse_attack", test_a, eps, alpha, num_iter)
+    # get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", test_a, eps, alpha, num_iter, restarts)
+    # get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", test_a, eps, alpha, num_iter)
 
-    a_p_delta = reader.read_field('coeff')[:ntest,:,:]
-    delta = torch.zeros_like(a_p_delta)
-
-    a_p_delta[:,::r,::r][:,:s,:s] = a_plus_delta
-    delta[:,::r,::r] = delta_out
-
-    scipy.io.savemat('pred/a_p_delta_darcy_r421_N1024.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-    'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy()})
-    
 
 if __name__ == "__main__":
     main()
