@@ -1,6 +1,7 @@
 """ 
     Simple attack showing the 2D Darcy model attacks
     Run with "python3.8 single_attack.py"
+		on AiMOS, module load gcc/9.3.0/1 
 """
 
 import torch
@@ -126,11 +127,35 @@ def show_burgers(var, key):
         plt.setp(p, 'facecolor', cm(c))    
     plt.show()
 
+# Get the attacked_mse = MSE (model(a+delta), solver(b_j))
+def get_attack_mse(model, ap_delta, u, ntest):
+
+    # iterate through ap_delta
+    print(ap_delta.shape)
+    print(u.shape)
+    total_mse = 0
+    for i in range(ntest):
+        apd = np.squeeze(ap_delta[i, :, :, 0])
+		print(apd.shape)
+		print(u.shape)
+        apd = torch.unsqueeze(apd, 0)
+		print(apd.shape)
+        apd = apd.cuda()
+        out = model(apd).squeeze()
+
+        mse = F.mse_loss(out.view(1, -1), u[i].view(1, -1), reduction='mean')            
+        total_mse += mse.item()
+
+    total_mse /= ntest
+    print (f"The attack MSE => MSE(model(a+delta), solver(b_j)) : {total_mse :.6f}")
+
+
 def main() -> None:
     ################################################################
     # configs
     ################################################################
     TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
+    TEST_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000_2.mat'
 
     ntrain = 1000
     ntest = 100
@@ -144,9 +169,10 @@ def main() -> None:
 
     modes = 12
     width = 32
-
+	
     r = 5
-    h = int(((421 - 1)/r) + 1)
+    g = 256
+    h = int(((g - 1)/r) + 1)
     s = h
 
     ################################################################
@@ -155,6 +181,12 @@ def main() -> None:
     reader = MatReader(TEST_PATH)
     x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+
+    # dataloader2 = MatReader('data/burgers_N100_G1092_B1000_gen.mat')
+    dataloader2 = MatReader('/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N5000.mat')
+    x_prime = dataloader2.read_field('coeff')[:,:]
+    u_prime = dataloader2.read_field('sol')[:ntest, ::r, ::r]
+
 
     x_normalizer = UnitGaussianNormalizer(x_test)
     x_test = x_normalizer.encode(x_test)
@@ -176,7 +208,7 @@ def main() -> None:
     ################################################################
     # training and evaluation
     ################################################################
-    model = torch.load('model/ns_fourier_darcy').eval()
+    model = torch.load('model/ns_fourier_darcy_256').eval()
     print(count_params(model))
     
     # Evaluation - the foolbox accuracy loss is for classification
@@ -199,10 +231,10 @@ def main() -> None:
     test_mse /= ntest
     print(f"test_mse loss before attack: {test_mse :.6f} ")
 
-    # show_burgers(y_test, 'y_test')
+    show_burgers(y_test, 'y_test')
     # show_burgers(pred, 'y_pred')
     # show_overlap(y_test, pred, 'u_test', 'u_pred')
-    # plt.show()
+    plt.show()
     
     # Comment: alpha = step size, epsilon = perturbation range 
     eps = 0.1
@@ -210,7 +242,7 @@ def main() -> None:
     restarts = 10
     alpha = eps/ num_iter
 
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+    delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
     a_plus_delta = ap_delta[:,:,:,0].squeeze()
@@ -221,9 +253,10 @@ def main() -> None:
     a_p_delta[:,::r,::r][:,:s,:s] = a_plus_delta
     delta[:,::r,::r] = delta_out
 
-    scipy.io.savemat('pred/a_p_delta_darcy_r421_N1024.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-    'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy()})
+    #scipy.io.savemat('pred/a_p_delta_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+    #'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub':ap_delta.cpu().numpy()})
     
+    get_attack_mse(model, ap_delta, u_prime.cuda(), ntest)
 
 if __name__ == "__main__":
     main()
