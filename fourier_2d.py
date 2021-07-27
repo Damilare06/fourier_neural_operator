@@ -24,7 +24,6 @@ np.random.seed(0)
 import sys
 print(torch.__version__)
 print(sys.version)
-exit()
 ################################################################
 # fourier layer
 ################################################################
@@ -47,8 +46,8 @@ class SpectralConv2d(nn.Module):
 
     # Complex multiplication
     def compl_mul2d(self, input, weights):
-        print("ABJ",input.shape, weights.shape)
-        exit()
+        #print("ABJ",input.shape, weights.shape)
+        
         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
@@ -139,11 +138,14 @@ class FNO2d(nn.Module):
 ################################################################
 # configs
 ################################################################
-TRAIN_PATH = 'data/piececonst_r421_N1024_smooth1.mat'
-TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
+# TRAIN_PATH = 'data/piececonst_r421_N1024_smooth1.mat'
+# TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
+TRAIN_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000.mat'
+TEST_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000_2.mat'
 
 ntrain = 1000
 ntest = 100
+g = 256 # 421
 
 batch_size = 20
 learning_rate = 0.001
@@ -156,7 +158,7 @@ modes = 12
 width = 32
 
 r = 5
-h = int(((421 - 1)/r) + 1)
+h = int(((g - 1)/r) + 1)
 s = h
 
 ################################################################
@@ -166,19 +168,10 @@ reader = MatReader(TRAIN_PATH)
 x_train = reader.read_field('coeff')[:ntrain,::r,::r][:,:s,:s]
 y_train = reader.read_field('sol')[:ntrain,::r,::r][:,:s,:s]
 
-print("ABJ")
 reader = MatReader(TEST_PATH)
-# x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
-x_test = reader.read_field('coeff')[:,:,:][:,:,:]
-x_test = x_test[:ntest,::r,::r][:,:s,:s]
+x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
+y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
 
-print("ABJ", x_test.shape)
-
-# y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
-y_test = reader.read_field('sol')[:,:,:][:,:,:]
-y_test = y_test[:ntest,::r,::r][:,:s,:s]
-
-print("ABJ")
 x_normalizer = UnitGaussianNormalizer(x_train)
 x_train = x_normalizer.encode(x_train)
 x_test = x_normalizer.encode(x_test)
@@ -246,7 +239,7 @@ for ep in range(epochs):
     t2 = default_timer()
     print(ep, t2-t1, train_l2, test_l2)
 
-torch.save(model, 'model/ns_fourier_darcy')
+torch.save(model, 'model/ns_fourier_darcy_256')
 
 ################################################################
 # evaluation
