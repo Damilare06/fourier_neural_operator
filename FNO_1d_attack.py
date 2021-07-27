@@ -146,6 +146,45 @@ def get_ground_truth_mse(model, ap_delta, file, var, ntest, sub):
     total_mse /= ntest
     print (f"The ground truth MSE => MSE(model(a+delta), solver(a+delta)) : {total_mse :.6f}")
 
+# Get the attacked_mse = MSE (model(a+delta), solver(b_j))
+def get_attack_mse(model, ap_delta, u, ntest):
+
+    # iterate through ap_delta
+    total_mse = 0
+    for i in range(ntest):
+        apd = ap_delta[i, :, :]
+        apd = torch.unsqueeze(apd, 0)
+        apd = apd.cuda()
+        out = model(apd).squeeze()
+
+        mse = F.mse_loss(out.view(1, -1), u[i].view(1, -1), reduction='mean')            
+        total_mse += mse.item()
+
+    total_mse /= ntest
+    print (f"The attack MSE => MSE(model(a+delta), solver(b_j)) : {total_mse :.6f}")
+
+
+def get_apd_pred(model, apd, y_test):
+    pred = torch.zeros(y_test.shape)
+    test_mse = 0
+    N = apd.size(0)
+    with torch.no_grad():
+        for n in range(N):
+            x = apd[n,:,:]
+            x = torch.unsqueeze(x, 0)
+            x = x.cuda()
+
+            out = model(x).squeeze()
+            pred[n] = out
+    return pred
+
+def make_patch_spines_invisible(ax):
+    ax.set_frame_on(True)
+    ax.patch.set_visible(False)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+
 def main() -> None:
     #  configurations
     ntest = 100
@@ -165,6 +204,14 @@ def main() -> None:
         x_test = x_data_full[-ntest:,::sub]
         y_test = dataloader.read_field('u')[-ntest:,::sub]
 
+        # dataloader2 = MatReader('data/burgers_N100_G1092_B5000_gen.mat')
+        # dataloader2 = MatReader('data/burgers_N100_G1092.mat')
+        # dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
+        dataloader2 = MatReader('data/burgers_N100_G1092_e01.mat')
+        # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
+        b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
+        u_prime = dataloader2.read_field('u')[:ntest,::sub]
+
         # cat the locations information
         grid = np.linspace(0, 1, s).reshape(1, s, 1)
         grid = torch.tensor(grid, dtype=torch.float)
@@ -182,6 +229,7 @@ def main() -> None:
         with torch.no_grad():
             for x, y in test_loader:
                 x, y = x.cuda(), y.cuda()
+                # print(x.shape)
 
                 out = model(x).squeeze()
                 pred[index] = out
@@ -194,7 +242,7 @@ def main() -> None:
         print(f"The test_mse loss before attack := {test_mse :.9f} ")
 
         # alpha = step size, epsilon = perturbation range 
-        eps = 0.1
+        eps = 0.01
         num_iter = 10
         restarts = 10
         alpha = eps/ num_iter
@@ -214,11 +262,50 @@ def main() -> None:
         delta[:,::sub] = delta_out
         # print("ABJ: ", delta.shape, delta_out.shape)
 
-        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_inf_2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy()})
+        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_e01.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub': ap_delta.cpu().numpy()})
+
+        ##################################
+        # Printing the inputs
+        # ##################################
+        fig, ax1 = plt.subplots()
+        line1 = ax1.plot(x_test[0,:, 0].squeeze(), label='a')
+        line2 = ax1.plot(a_plus_delta[0,:], label='a+delta')
+        ax2 = ax1.twinx()
+        line3 = ax2.plot(b_j[0,:], c='green', label='b_j')
+
+        lines = line1 + line2 + line3 
+        ax1.legend(lines, [l.get_label() for l in lines], loc='lower right')
+        ax1.set_title(f'input plots with eps={eps}')
+
+        ##################################
+        # Printing the outputs
+        ##################################
+        a_plus_delta = torch.cat([a_plus_delta.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        b_j_delta = torch.cat([b_j.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        # print(a_plus_delta.shape, x_test.shape)
+        apd_pred = get_apd_pred(model, a_plus_delta, y_test)
+        bj_pred = get_apd_pred(model, b_j_delta, y_test)
+
+        fig, ax1 = plt.subplots()
+        line1 = ax1.plot(pred[0,:], label='model(a)')
+        line2 = ax1.plot(apd_pred[0,:], label='model(a+delta)')
+        ax2 = ax1.twinx()
+        # ax3 = ax1.twinx()
+        line3 = ax2.plot(bj_pred[0,:], c='green', label='model(b_j)')
+        # line3 = ax2.plot(u_prime[0,:], c='red', label='solver(b_j)') 
+
+        lines = line1 + line2 + line3 
+        ax1.legend(lines, [l.get_label() for l in lines], loc='lower right')
+        ax1.set_title(f'output plots with eps={eps}')
+
+        plt.show()
 
     # Ground_truth_mse = MSE(model(a+delta), solver(a+delta))
-    get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
+    # get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
+
+    # Get the attacked_mse = MSE (model(a+delta), solver(b_j))
+    get_attack_mse(model, ap_delta, u_prime.cuda(), ntest)
 
 
 

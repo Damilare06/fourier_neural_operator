@@ -181,6 +181,13 @@ def main() -> None:
     reader = MatReader(TEST_PATH)
     x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+    print(x_test.shape, y_test.shape)
+
+    # load a+delta data
+    dataloader2 = MatReader('data/darcy_r256_N100_2.mat')
+    x_prime = dataloader2.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
+    y_prime = dataloader2.read_field('sol')[:ntest,::r,::r][:,:s,:s]
+
 
     # dataloader2 = MatReader('data/burgers_N100_G1092_B1000_gen.mat')
     dataloader2 = MatReader('/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N5000.mat')
