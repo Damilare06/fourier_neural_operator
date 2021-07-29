@@ -9,6 +9,7 @@ import torchvision.models as models
 import torch.nn.functional as F
 from fourier_attack_module import * 
 from utilities3 import *
+import sys
 
 def mse_attack(model, X, y, epsilon=0.1, alpha=1e-5, num_iter=1):
     """ 
@@ -129,37 +130,43 @@ def show_burgers(var, key):
 
 # Get the attacked_mse = MSE (model(a+delta), solver(b_j))
 def get_attack_mse(model, ap_delta, u, ntest):
-
-    # iterate through ap_delta
-    print(ap_delta.shape)
-    print(u.shape)
     total_mse = 0
     for i in range(ntest):
-        apd = np.squeeze(ap_delta[i, :, :, 0])
-		print(apd.shape)
-		print(u.shape)
+        apd = np.squeeze(ap_delta[i, :, :, :])
         apd = torch.unsqueeze(apd, 0)
-		print(apd.shape)
         apd = apd.cuda()
         out = model(apd).squeeze()
-
-        mse = F.mse_loss(out.view(1, -1), u[i].view(1, -1), reduction='mean')            
-        total_mse += mse.item()
-
+        mse = F.mse_loss(out, u[i].squeeze())
+        # print('ABJ mse: ', mse, out.shape)
+       #  total_mse += mse.item()
+        total_mse += mse
+    
     total_mse /= ntest
-    print (f"The attack MSE => MSE(model(a+delta), solver(b_j)) : {total_mse :.6f}")
+    print (f"The attack MSE => MSE(model(a+delta), solver(a+delta)) : {total_mse :.6f}")
+ 
 
+def get_apd_pred(model, apd, y_test):
+    pred = torch.zeros(y_test.shape)
+    test_mse = 0
+    N = apd.size(0)
+    with torch.no_grad():
+        for n in range(N):
+            x = apd[n,:,:, :]
+            x = torch.unsqueeze(x, 0)
+            x = x.cuda()
+
+            out = model(x).squeeze()
+            pred[n] = out
+    return pred
 
 def main() -> None:
     ################################################################
     # configs
     ################################################################
-    TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
-    TEST_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000_2.mat'
+    # TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
+    TEST_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N1000_test.mat'
 
-    ntrain = 1000
     ntest = 100
-
     batch_size = 20
     learning_rate = 0.001
 
@@ -181,18 +188,14 @@ def main() -> None:
     reader = MatReader(TEST_PATH)
     x_test = reader.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
     y_test = reader.read_field('sol')[:ntest,::r,::r][:,:s,:s]
-    print(x_test.shape, y_test.shape)
 
     # load a+delta data
-    dataloader2 = MatReader('data/darcy_r256_N100_2.mat')
-    x_prime = dataloader2.read_field('coeff')[:ntest,::r,::r][:,:s,:s]
-    y_prime = dataloader2.read_field('sol')[:ntest,::r,::r][:,:s,:s]
-
-
     # dataloader2 = MatReader('data/burgers_N100_G1092_B1000_gen.mat')
-    dataloader2 = MatReader('/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N5000.mat')
-    x_prime = dataloader2.read_field('coeff')[:,:]
-    u_prime = dataloader2.read_field('sol')[:ntest, ::r, ::r]
+    # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N5000.mat')
+    # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_2.mat')
+    dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_clipped.mat')
+    x_prime = dataloader2.read_field('coeff')[:ntest, ::r, ::r]
+    y_prime = dataloader2.read_field('sol')[:ntest, ::r, ::r]
 
 
     x_normalizer = UnitGaussianNormalizer(x_test)
@@ -201,6 +204,11 @@ def main() -> None:
     y_normalizer = UnitGaussianNormalizer(y_test)
     y_test = y_normalizer.encode(y_test)
 
+    x_normalizer = UnitGaussianNormalizer(x_prime)
+    x_prime = x_normalizer.encode(x_prime)
+    y_normalizer = UnitGaussianNormalizer(y_prime)
+    y_prime = y_normalizer.encode(y_prime)
+
     grids = []
     grids.append(np.linspace(0, 1, s))
     grids.append(np.linspace(0, 1, s))
@@ -208,6 +216,7 @@ def main() -> None:
     grid = grid.reshape(1,s,s,2)
     grid = torch.tensor(grid, dtype=torch.float)
     x_test = torch.cat([x_test.reshape(ntest,s,s,1), grid.repeat(ntest,1,1,1)], dim=3)
+
 
     test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=batch_size, shuffle=False)
 
@@ -227,13 +236,14 @@ def main() -> None:
     with torch.no_grad():
         for x, y in test_loader:
             x, y = x.cuda(), y.cuda()
-
+            # print(f'ABJ x: {x.shape}')
             out = model(x)
             pred[index] = out.squeeze()
 
             mse = F.mse_loss(out.view(batch_size, -1), y.view(batch_size, -1), reduction='mean')            
             test_mse += mse.item()
             # print(index, test_mse)
+            # print(f"ABJ x: {x.shape}")
             index = index + 1
     test_mse /= ntest
     print(f"test_mse loss before attack: {test_mse :.6f} ")
@@ -252,18 +262,26 @@ def main() -> None:
     delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
     # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
-    a_plus_delta = ap_delta[:,:,:,0].squeeze()
+    a_plus_delta = ap_delta# [:,:,:,0].squeeze()
 
     a_p_delta = reader.read_field('coeff')[:ntest,:,:]
     delta = torch.zeros_like(a_p_delta)
 
-    a_p_delta[:,::r,::r][:,:s,:s] = a_plus_delta
+    a_p_delta[:,::r,::r][:,:s,:s] = a_plus_delta[:,:,:,0]
     delta[:,::r,::r] = delta_out
 
     #scipy.io.savemat('pred/a_p_delta_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
     #'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub':ap_delta.cpu().numpy()})
     
-    get_attack_mse(model, ap_delta, u_prime.cuda(), ntest)
+    # Preprocessing the x_prime
+    # 1) normalize it then
+    # 2) concat the locations to apd
+    x_prime = torch.cat([x_prime.reshape(ntest,s,s,1), grid.repeat(ntest,1,1,1)], dim=3)
+    print('ABJ apd', x_test.shape, torch.mean(x_test[:,:,:,0]), torch.mean(delta_out), torch.mean(ap_delta[:,:,:,0]), torch.mean(x_prime[:,:,:,0])) 
+    get_attack_mse(model, ap_delta, y_prime.cuda(), ntest)
+    prime_pred = get_apd_pred(model, x_prime, y_test.cuda())
+    scipy.io.savemat('pred/apd_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(), 'x_prime': x_prime[:,:,:,0].cpu().numpy() , \
+    'delta': delta_out.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'prime_pred':prime_pred.cpu().numpy(), 'apd':ap_delta.cpu().numpy()})
 
 if __name__ == "__main__":
     main()

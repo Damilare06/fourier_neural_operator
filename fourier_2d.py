@@ -141,8 +141,8 @@ class FNO2d(nn.Module):
 ################################################################
 # TRAIN_PATH = 'data/piececonst_r421_N1024_smooth1.mat'
 # TEST_PATH = 'data/piececonst_r421_N1024_smooth2.mat'
-TRAIN_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000.mat'
-TEST_PATH = '/gpfs/u/home/EXTA/EXTAabad/scratch/fourier_neural_operator/darcy_r256_N1000_2.mat'
+TRAIN_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N1000.mat'
+TEST_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N1000_2.mat'
 
 ntrain = 1000
 ntest = 100
