@@ -206,8 +206,8 @@ def main() -> None:
 
         # dataloader2 = MatReader('data/burgers_N100_G1092_B5000_gen.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092.mat')
-        # dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
-        dataloader2 = MatReader('data/burgers_N100_G1092_e01.mat')
+        dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
+        # dataloader2 = MatReader('data/burgers_N100_G1092_e01.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
         b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
         u_prime = dataloader2.read_field('u')[:ntest,::sub]
@@ -242,7 +242,7 @@ def main() -> None:
         print(f"The test_mse loss before attack := {test_mse :.9f} ")
 
         # alpha = step size, epsilon = perturbation range 
-        eps = 0.01
+        eps = 0.05
         num_iter = 10
         restarts = 10
         alpha = eps/ num_iter
