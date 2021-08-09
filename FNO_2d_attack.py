@@ -136,10 +136,10 @@ def get_attack_mse(model, ap_delta, u, ntest):
     total_mse = 0
     for i in range(ntest):
         apd = np.squeeze(ap_delta[i, :, :, 0])
-		print(apd.shape)
-		print(u.shape)
+        print(apd.shape)
+        print(u.shape)
         apd = torch.unsqueeze(apd, 0)
-		print(apd.shape)
+        print(apd.shape)
         apd = apd.cuda()
         out = model(apd).squeeze()
 
