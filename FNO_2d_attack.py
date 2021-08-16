@@ -193,7 +193,9 @@ def main() -> None:
     # dataloader2 = MatReader('data/burgers_N100_G1092_B1000_gen.mat')
     # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N5000.mat')
     # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_2.mat')
-    dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_clipped.mat')
+    # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_clipped.mat')
+    # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_clipped_2.mat')
+    dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/darcy_r256_N100_e1.mat')
     x_prime = dataloader2.read_field('coeff')[:ntest, ::r, ::r]
     y_prime = dataloader2.read_field('sol')[:ntest, ::r, ::r]
 
@@ -259,29 +261,43 @@ def main() -> None:
     restarts = 10
     alpha = eps/ num_iter
 
-    delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
-    # delta_out, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
+    delta_norm, ap_delta = get_proxy_mse(model, test_loader, mse_attack, "mse_attack", x_test, eps, alpha, num_iter)
+
+    #TODO: Translate delta and ap_delta to the non-normalized space
+    delta_non_norm = x_normalizer.decode(delta_norm)
+    apd_normalizer = UnitGaussianNormalizer(ap_delta)
+    apd_non_norm = x_normalizer.decode(ap_delta[:,:,:,0].squeeze())
+
+    # delta_norm, ap_delta = get_proxy_mse(model, test_loader, mse_linf_attack, "mse_linf_attack", x_test, eps, alpha, num_iter)
+    # delta_norm, ap_delta = get_proxy_mse(model, test_loader, mse_linf_rand_attack, "mse_linf_rand_attack", x_test, eps, alpha, num_iter, restarts)
     a_plus_delta = ap_delta# [:,:,:,0].squeeze()
 
     a_p_delta = reader.read_field('coeff')[:ntest,:,:]
     delta = torch.zeros_like(a_p_delta)
 
     a_p_delta[:,::r,::r][:,:s,:s] = a_plus_delta[:,:,:,0]
-    delta[:,::r,::r] = delta_out
+    delta[:,::r,::r] = delta_non_norm
+    x_test_send = reader.read_field('coeff')[:ntest,:,:]
+    xt_normalizer = UnitGaussianNormalizer(x_test_send)
+    x_test_send = xt_normalizer.encode(x_test_send)
 
-    #scipy.io.savemat('pred/a_p_delta_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-    #'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub':ap_delta.cpu().numpy()})
+    # scipy.io.savemat('pred/a_p_delta_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+    # 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_norm.cpu().numpy(), 'apd_sub':ap_delta.cpu().numpy(), \
+    # 'apd_nn':apd_non_norm[:,:,:,0].cpu().numpy(), 'a_orig': x_test_send.cpu().numpy()})
+    scipy.io.savemat('pred/a_p_delta_darcy_r256_N100_e1.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(),  'delta': delta.cpu().numpy(), \
+    'd_norm':delta_norm.cpu().numpy(),'delta_sub': delta_norm.cpu().numpy(),  \
+    'apd_nn':apd_non_norm.cpu().numpy(), 'a_orig': x_test_send.cpu().numpy()})
     
     # Preprocessing the x_prime
     # 1) normalize it then
     # 2) concat the locations to apd
+
+
     x_prime = torch.cat([x_prime.reshape(ntest,s,s,1), grid.repeat(ntest,1,1,1)], dim=3)
-    print('ABJ apd', x_test.shape, torch.mean(x_test[:,:,:,0]), torch.mean(delta_out), torch.mean(ap_delta[:,:,:,0]), torch.mean(x_prime[:,:,:,0])) 
     get_attack_mse(model, ap_delta, y_prime.cuda(), ntest)
     prime_pred = get_apd_pred(model, x_prime, y_test.cuda())
-    scipy.io.savemat('pred/apd_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(), 'x_prime': x_prime[:,:,:,0].cpu().numpy() , \
-    'delta': delta_out.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'prime_pred':prime_pred.cpu().numpy(), 'apd':ap_delta.cpu().numpy()})
+    scipy.io.savemat('pred/apd_darcy_r256_N100_e1.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(), 'x_prime': x_prime[:,:,:,0].cpu().numpy() , \
+    'delta': delta_norm.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'prime_pred':prime_pred.cpu().numpy(), 'apd':ap_delta.cpu().numpy()})
 
 if __name__ == "__main__":
     main()

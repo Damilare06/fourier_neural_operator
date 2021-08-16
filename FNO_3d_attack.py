@@ -120,8 +120,8 @@ def main() -> None:
     ################################################################
     # configs
     ################################################################
-    TEST_PATH = 'data/ns_V1e-3_N5000_T50.mat'
-    ntest = 200
+    TEST_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/ns_V1e-3_N5000_T50.mat'
+    ntest = 20
 
     modes = 8
     width = 20
@@ -144,8 +144,7 @@ def main() -> None:
     # load data and data normalization
     ################################################################
     reader = MatReader(TEST_PATH)
-    train_buff = reader.read_field('u')[:,:,:,:]
-    # print(train_buff.shape)
+    train_buff = reader.read_field('u')[-ntest:,:,:,:]
 
     test_a = train_buff[-ntest:,::sub,::sub,:T_in]
     test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
@@ -169,8 +168,7 @@ def main() -> None:
 
     test_a = torch.cat((gridx.repeat([ntest,1,1,1,1]), gridy.repeat([ntest,1,1,1,1]),
                         gridt.repeat([ntest,1,1,1,1]), test_a), dim=-1)
-    print("ABJ 0.05", test_a.shape)
-    # exit()
+    #print("ABJ 0.05", test_a.shape)
 
     test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
 
@@ -207,7 +205,7 @@ def main() -> None:
 
     # show_navier(test_u, 'y_test')
     # show_navier(pred, 'y_pred')
-    print("ABJ: ", test_u.shape, pred.shape)
+    #print("ABJ: ", test_u.shape, pred.shape)
     # show_overlap(test_u, pred, 'u_test', 'u_pred')
     # plt.show()
     

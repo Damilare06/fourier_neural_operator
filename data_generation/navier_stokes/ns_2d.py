@@ -130,7 +130,7 @@ s = 256
 sub = 1
 
 #Number of solutions to generate
-N = 20
+N = 20 #1000
 
 #Set up 2d GRF with covariance parameters
 GRF = GaussianRF(2, s, alpha=2.5, tau=7, device=device)
@@ -161,9 +161,11 @@ for j in range(N//bsize):
 
     #Sample random feilds
     w0 = GRF.sample(bsize)
+    T = 50.0
+    visc = 1e-3
 
     #Solve NS
-    sol, sol_t = navier_stokes_2d(w0, f, 1e-3, 50.0, 1e-4, record_steps)
+    sol, sol_t = navier_stokes_2d(w0, f, visc, T, 1e-4, record_steps)
 
     a[c:(c+bsize),...] = w0
     u[c:(c+bsize),...] = sol
@@ -172,4 +174,4 @@ for j in range(N//bsize):
     t1 = default_timer()
     print(j, c, t1-t0)
 
-scipy.io.savemat('ns_data.mat', mdict={'a': a.cpu().numpy(), 'u': u.cpu().numpy(), 't': sol_t.cpu().numpy()})
+scipy.io.savemat(f'navier_N{N}_T{int(T)}_v{visc}.mat', mdict={'a': a.cpu().numpy(), 'u': u.cpu().numpy(), 't': sol_t.cpu().numpy()})
