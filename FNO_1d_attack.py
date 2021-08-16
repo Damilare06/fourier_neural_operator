@@ -33,7 +33,7 @@ def main() -> None:
         # dataloader2 = MatReader('data/burgers_N100_G1092_B5000_gen.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
-        dataloader2 = MatReader('data/burgers_N100_G1092_e01_l2.mat')
+        dataloader2 = MatReader('data/burgers_N100_G1092_e05_l2.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
         b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
         u_prime = dataloader2.read_field('u')[:ntest,::sub]
@@ -68,7 +68,7 @@ def main() -> None:
         print(f"The test_mse loss before attack := {test_mse :.9f} ")
 
         # alpha = step size, epsilon = perturbation range 
-        eps = 0.01
+        eps = 0.05
         num_iter = 10
         restarts = 10
         alpha = eps/ num_iter
@@ -89,9 +89,6 @@ def main() -> None:
         a_p_delta[:,::sub] = a_plus_delta
         delta[:,::sub] = delta_out
 
-        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_e01_l2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub': ap_delta.cpu().numpy()})
-
         # Printing the inputs & outputs
         print_inputs(x_test, a_plus_delta, b_j, eps)
 
@@ -102,6 +99,10 @@ def main() -> None:
         
         print_outputs(pred, apd_pred, bj_pred, eps)
         # plt.show()
+
+        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_e05_l2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub': ap_delta.cpu().numpy(), \
+                    'apd_pred': apd_pred.cpu().numpy()})
 
     # Ground_truth_mse = MSE(model(a+delta), solver(a+delta))
     # get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
