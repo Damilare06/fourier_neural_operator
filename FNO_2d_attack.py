@@ -134,6 +134,11 @@ def get_attack_mse(model, ap_delta, u, ntest):
     for i in range(ntest):
         apd = np.squeeze(ap_delta[i, :, :, :])
         apd = torch.unsqueeze(apd, 0)
+#        apd = np.squeeze(ap_delta[i, :, :, 0])
+#        print(apd.shape)
+#        print(u.shape)
+#        apd = torch.unsqueeze(apd, 0)
+#        print(apd.shape)
         apd = apd.cuda()
         out = model(apd).squeeze()
         mse = F.mse_loss(out, u[i].squeeze())
@@ -231,6 +236,7 @@ def main() -> None:
     
     # Evaluation - the foolbox accuracy loss is for classification
     pred = torch.zeros(y_test.shape)
+    pred = torch.zeros(y_test.shape)
     test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=1, shuffle=False)
     index = 0
     test_mse = 0
@@ -256,7 +262,7 @@ def main() -> None:
     plt.show()
     
     # Comment: alpha = step size, epsilon = perturbation range 
-    eps = 0.1
+    eps = 1
     num_iter = 10
     restarts = 10
     alpha = eps/ num_iter
@@ -284,9 +290,8 @@ def main() -> None:
     # scipy.io.savemat('pred/a_p_delta_darcy_r256_N100.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
     # 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_norm.cpu().numpy(), 'apd_sub':ap_delta.cpu().numpy(), \
     # 'apd_nn':apd_non_norm[:,:,:,0].cpu().numpy(), 'a_orig': x_test_send.cpu().numpy()})
-    scipy.io.savemat('pred/a_p_delta_darcy_r256_N100_e1.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(),  'delta': delta.cpu().numpy(), \
-    'd_norm':delta_norm.cpu().numpy(),'delta_sub': delta_norm.cpu().numpy(),  \
-    'apd_nn':apd_non_norm.cpu().numpy(), 'a_orig': x_test_send.cpu().numpy()})
+    # scipy.io.savemat('pred/a_p_delta_darcy_r256_N100_e1.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(),  'delta': delta.cpu().numpy(), \
+    # 'delta_sub': delta_norm.cpu().numpy(), 'apd_nn':apd_non_norm.cpu().numpy(), 'a_orig': x_test_send.cpu().numpy()})
     
     # Preprocessing the x_prime
     # 1) normalize it then
@@ -296,8 +301,9 @@ def main() -> None:
     x_prime = torch.cat([x_prime.reshape(ntest,s,s,1), grid.repeat(ntest,1,1,1)], dim=3)
     get_attack_mse(model, ap_delta, y_prime.cuda(), ntest)
     prime_pred = get_apd_pred(model, x_prime, y_test.cuda())
-    scipy.io.savemat('pred/apd_darcy_r256_N100_e1.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(), 'x_prime': x_prime[:,:,:,0].cpu().numpy() , \
-    'delta': delta_norm.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'prime_pred':prime_pred.cpu().numpy(), 'apd':ap_delta.cpu().numpy()})
+    scipy.io.savemat('pred/apd_darcy_r256_N100_e10.mat', mdict={'a': x_test[:,:,:,0].cpu().numpy(), 'x_prime': x_prime[:,:,:,0].cpu().numpy() , \
+    'delta_norm_sub': delta_norm.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'prime_pred':prime_pred.cpu().numpy(), 'apd':ap_delta.cpu().numpy(), \
+    'apd_nn':apd_non_norm.cpu().numpy(), 'a_orig': x_test_send.cpu().numpy(), 'delta': delta.cpu().numpy() })
 
 if __name__ == "__main__":
     main()
