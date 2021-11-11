@@ -61,47 +61,42 @@ def pgd_linf(model, loader, attack, attack_name, xtest, *args):
     for X, y in loader:
         X, y = X.cuda(), y.cuda()
         delta = attack(model, X, y.squeeze(), *args)
+        # print(X.shape, y.shape, delta.shape)
 
         # zero out the loc_delta index
-        if 'rand' in attack_name:
-            delta[:,1] = 0
-        else:
-            delta[:,:,1] = 0
+        delta[:,:,:,:,:3] = 0
 
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         
         total_loss += loss
-        a_plus_delta[index,:,:] = X + delta
-        delta_arr[index,:,:] = delta
+        a_plus_delta[index,:,:,:,:] = X + delta
+        delta_arr[index,:,:,:,:] = delta
 
         index += 1
-
     output =  total_loss / len(loader.dataset)
     print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {output :.6f} ")
 
-    return delta_arr[:,:,0].squeeze(), a_plus_delta
+    return delta_arr[:,:,:,:,:], a_plus_delta
 
 def norms(Z):
-    print("ABJ: Z ", Z.shape)
     return Z.view(Z.shape[0], -1).norm(dim=1)[:,None,None]
 
 def pgd_l2(model, X, y, epsilon, alpha, num_iter):
-    delta = torch.zeros_like(X, requires_grad=True)
+    delta = torch.zeros_like(X, requires_grad=True).cuda()
     for t in range(num_iter):
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         loss.backward()
-        print("ABJ norm: ", norms(delta.grad.detach()).shape)
         delta.data += alpha*delta.grad.detach() / norms(delta.grad.detach())
         delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
         delta.data *= epsilon / norms(delta.detach()).clamp(min=epsilon)
         delta.grad.zero_()        
     
     delta = delta.detach()
-    delta[:,:, 1] = 0
+    delta[:,:,:,:,:3] = 0
     a_plus_delta = X + delta
-    delta = delta[:,:,0].squeeze()
+    # delta = delta[:,:,0].squeeze()
     return delta.cpu(), a_plus_delta.cpu()
 
 

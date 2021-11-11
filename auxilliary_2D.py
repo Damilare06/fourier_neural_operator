@@ -46,12 +46,118 @@ def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
             delta.data = (delta + alpha*delta.grad.detach().sign()).clamp(-epsilon,epsilon)
             delta.grad.zero_()
 
-        all_loss = F.mse_loss(model(X + delta).squeeze(), y, reduction='none')            
+        all_loss = F.mse_loss(model(X + delta).squeeze(), y, reduction='none')
         max_delta[all_loss >= max_loss] = delta.detach()[all_loss >= max_loss]
         max_loss = torch.max(max_loss, all_loss)
 
     return max_delta
 
+
+def get_proxy_mse(model, loader, attack, attack_name, x_test, *args):
+    index = 0
+    total_loss = 0.
+    delta_arr = torch.zeros_like(x_test)
+    a_plus_delta = torch.zeros_like(x_test)
+
+    for X, y in loader:
+        X, y = X.cuda(), y.cuda()
+        delta = attack(model, X, y.squeeze(), *args)
+
+        # zero out the loc_delta index
+        if 'rand' in attack_name:
+            delta[:,:,1] = 0
+            delta[:,:,2] = 0
+        else:
+            delta[:,:,:,1] = 0
+            delta[:,:,:,2] = 0
+
+        yp = model(X + delta)
+        loss = F.mse_loss(yp.squeeze(), y.squeeze())
+
+        total_loss += loss
+        a_plus_delta[index,:,:,:] = X + delta
+        delta_arr[index,:,:,:] = delta
+
+        index += 1
+
+    output =  total_loss / len(loader.dataset)
+    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {output :.6f} ")
+
+    return delta_arr[:,:,:,0].squeeze(), a_plus_delta
+
+def show_overlap(var1, var2, key1, key2):
+    cm = plt.cm.get_cmap('viridis')
+    var = [var1.numpy(), var2.numpy()]
+    var = np.asarray(var)
+    var = var.reshape(var.shape[1], var.shape[2], var.shape[3], var.shape[0])
+    key = [key1, key2]
+
+    # Generate the data distribution
+    fig, ax = plt.subplots()
+    ax.set_title(f"N = {var.shape[0]} of {key[0]} vs {key[1]} on {var.shape[1]} grid\n")
+    var_hist = var.reshape(var.shape[0] * var.shape[1] * var.shape[2], var.shape[3])
+    ax.hist(var_hist, density=True, stacked=False, bins='auto', label=key)
+    ax.set_xlabel(f"{key} distribution")
+    ax.legend()
+
+def show_burgers(var, key):
+    cm = plt.cm.get_cmap('viridis')
+    var = var.numpy()
+
+    # Generate the data distribution
+    fig, ax = plt.subplots()
+    ax.set_title(f"N = {var.shape[0]} of {key} on {var.shape[1]} grid\n")
+    var_hist = var.flatten()
+    n, bins, patches = ax.hist(var_hist, density=True, stacked=True, bins='auto', color="green")
+    ax.set_xlabel(f"{key} distribution")
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+    # scale values to interval [0,1]
+    col = bin_centers - min(bin_centers)
+    col /= max(col)
+
+    for c, p in zip(col, patches):
+        plt.setp(p, 'facecolor', cm(c))
+    plt.show()
+
+# Get the attacked_mse = MSE (model(a+delta), solver(b_j))
+def get_attack_mse(model, ap_delta, u, ntest):
+    total_mse = 0
+    for i in range(ntest):
+        apd = np.squeeze(ap_delta[i, :, :, :])
+        apd = torch.unsqueeze(apd, 0)
+#        apd = np.squeeze(ap_delta[i, :, :, 0])
+#        print(apd.shape)
+#        print(u.shape)
+#        apd = torch.unsqueeze(apd, 0)
+#        print(apd.shape)
+        apd = apd.cuda()
+        out = model(apd).squeeze()
+        mse = F.mse_loss(out, u[i].squeeze())
+        # print('ABJ mse: ', mse, out.shape)
+       #  total_mse += mse.item()
+        total_mse += mse
+
+    total_mse /= ntest
+    print (f"The attack MSE => MSE(model(a+delta), solver(a+delta)) : {total_mse :.6f}")
+
+
+def get_apd_pred(model, apd, y_test):
+    pred = torch.zeros(y_test.shape)
+    test_mse = 0
+    N = apd.size(0)
+    with torch.no_grad():
+        for n in range(N):
+            x = apd[n,:,:, :]
+            x = torch.unsqueeze(x, 0)
+            x = x.cuda()
+
+            out = model(x).squeeze()
+            pred[n] = out
+    return pred
+
+
+# =====================================================>
 def pgd_linf(model, loader, attack, attack_name, xtest, *args):
     total_loss = 0.
     index = 0
@@ -82,9 +188,11 @@ def pgd_linf(model, loader, attack, attack_name, xtest, *args):
 
     return delta_arr[:,:,0].squeeze(), a_plus_delta
 
-def norms(Z):
-    print("ABJ: Z ", Z.shape)
-    return Z.view(Z.shape[0], -1).norm(dim=1)[:,None,None]
+def norms(Z):#[ntest, x, y]
+    # print("ABJ Z: ", Z.shape)
+    #return Z.view(Z.shape[0], -1).norm(dim=1)[:,None,None,None]
+    Z2 = Z.clone()
+    return Z2.reshape(Z.shape[0], -1).norm(dim=1)[:,None,None,None]
 
 def pgd_l2(model, X, y, epsilon, alpha, num_iter):
     delta = torch.zeros_like(X, requires_grad=True)
@@ -92,16 +200,17 @@ def pgd_l2(model, X, y, epsilon, alpha, num_iter):
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         loss.backward()
-        print("ABJ norm: ", norms(delta.grad.detach()).shape)
+        print("ABJ: grad ", delta.grad.shape)
+        # print("ABJ norm: ", norms(delta.grad.detach()).shape)
         delta.data += alpha*delta.grad.detach() / norms(delta.grad.detach())
-        delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
+        # delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
         delta.data *= epsilon / norms(delta.detach()).clamp(min=epsilon)
         delta.grad.zero_()        
     
     delta = delta.detach()
-    delta[:,:, 1] = 0
+    delta[:,:,:,1] = 0
     a_plus_delta = X + delta
-    delta = delta[:,:,0].squeeze()
+    delta = delta[:,:,:,0].squeeze()
     return delta.cpu(), a_plus_delta.cpu()
 
 
@@ -122,26 +231,6 @@ def show_burgers_overlap(var1, var2, key1, key2):
     ax.set_xlabel(f"{key} distribution")
     ax.legend()
 
-def show_burgers(var, key):
-    cm = plt.cm.get_cmap('viridis')
-    var = var.numpy()
-
-    # Generate the data distribution
-    fig, ax = plt.subplots()
-    ax.set_title(f"N = {var.shape[0]} of {key} on {var.shape[1]} grid\n")
-    var_hist = var.flatten()
-    n, bins, patches = ax.hist(var_hist, density=True, stacked=True, bins='auto', color="green")
-    ax.set_xlabel(f"{key} distribution")
-    bin_centers = 0.5 * (bins[:-1] + bins[1:])
-
-    # scale values to interval [0,1]
-    col = bin_centers - min(bin_centers)
-    col /= max(col)
-
-    for c, p in zip(col, patches):
-        plt.setp(p, 'facecolor', cm(c))    
-    plt.show()
-
 # ground_truth_mse = MSE(model(a+delta), solver(a+delta))
 def get_ground_truth_mse(model, ap_delta, file, var, ntest, sub):
     dataloader = MatReader(file)
@@ -160,38 +249,6 @@ def get_ground_truth_mse(model, ap_delta, file, var, ntest, sub):
 
     total_mse /= ntest
     print (f"The ground truth MSE => MSE(model(a+delta), solver(a+delta)) : {total_mse :.6f}")
-
-# Get the attacked_mse = MSE (model(a+delta), solver(b_j))
-def get_attack_mse(model, ap_delta, u, ntest):
-
-    # iterate through ap_delta
-    total_mse = 0
-    for i in range(ntest):
-        apd = ap_delta[i, :, :]
-        apd = torch.unsqueeze(apd, 0)
-        apd = apd.cuda()
-        out = model(apd).squeeze()
-
-        mse = F.mse_loss(out.view(1, -1), u[i].view(1, -1), reduction='mean')            
-        total_mse += mse.item()
-
-    total_mse /= ntest
-    print (f"The attack MSE => MSE(model(a+delta), solver(b_j)) : {total_mse :.9f}")
-
-
-def get_apd_pred(model, apd, y_test):
-    pred = torch.zeros(y_test.shape)
-    test_mse = 0
-    N = apd.size(0)
-    with torch.no_grad():
-        for n in range(N):
-            x = apd[n,:,:]
-            x = torch.unsqueeze(x, 0)
-            x = x.cuda()
-
-            out = model(x).squeeze()
-            pred[n] = out
-    return pred
 
 def make_patch_spines_invisible(ax):
     ax.set_frame_on(True)
