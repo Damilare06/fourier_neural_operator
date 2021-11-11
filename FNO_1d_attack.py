@@ -25,7 +25,7 @@ def main() -> None:
     # read data of the shape (number of samples, grid size)
     if evaluate:
         # dataloader = MatReader('data/burgers_N2048_G8192.mat')
-        dataloader = MatReader('data/burgers_N2048_G8192_inf_2.mat')
+        dataloader = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/data/burgers_N2048_G8192_inf_2.mat')
         x_data_full = dataloader.read_field('a')[:,:]
         x_test = x_data_full[-ntest:,::sub]
         y_test = dataloader.read_field('u')[-ntest:,::sub]
@@ -33,10 +33,10 @@ def main() -> None:
         # dataloader2 = MatReader('data/burgers_N100_G1092_B5000_gen.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092.mat')
         # dataloader2 = MatReader('data/burgers_N100_G1092_e05.mat')
-        dataloader2 = MatReader('data/burgers_N100_G1092_e05_l2.mat')
-        # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
-        b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
-        u_prime = dataloader2.read_field('u')[:ntest,::sub]
+        # dataloader2 = MatReader('/gpfs/u/home/MPFS/MPFSadsj/scratch/fourier_neural_operator/data/burgers_N100_G1092_e05.mat')
+        # # dataloader2 = MatReader('data/burgers_N100_G1092_e1.mat')
+        # b_j = dataloader2.read_field('b_j')[:,:]# or [:,:]
+        # u_prime = dataloader2.read_field('u')[:ntest,::sub]
 
         # cat the locations information
         grid = np.linspace(0, 1, s).reshape(1, s, 1)
@@ -90,25 +90,25 @@ def main() -> None:
         delta[:,::sub] = delta_out
 
         # Printing the inputs & outputs
-        print_inputs(x_test, a_plus_delta, b_j, eps)
+        # print_inputs(x_test, a_plus_delta, b_j, eps)
 
-        a_plus_delta = torch.cat([a_plus_delta.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
-        b_j_delta = torch.cat([b_j.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
-        apd_pred = get_apd_pred(model, a_plus_delta, y_test)
-        bj_pred = get_apd_pred(model, b_j_delta, y_test)
-        
-        print_outputs(pred, apd_pred, bj_pred, eps)
-        # plt.show()
+        # a_plus_delta = torch.cat([a_plus_delta.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        # b_j_delta = torch.cat([b_j.reshape(ntest,s,1), grid.repeat(ntest,1,1)], dim=2)
+        # apd_pred = get_apd_pred(model, a_plus_delta, y_test)
+        # bj_pred = get_apd_pred(model, b_j_delta, y_test)
+        # 
+        # print_outputs(pred, apd_pred, bj_pred, eps)
+        # # plt.show()
 
-        scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_e05_l2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
-                'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub': ap_delta.cpu().numpy(), \
-                    'apd_pred': apd_pred.cpu().numpy()})
+        # scipy.io.savemat('pred/a_p_delta_burger_N2048_G8092_e05_l2.mat', mdict={'a': x_test[:,:,0].cpu().numpy() ,'a_plus_delta': a_p_delta.cpu().numpy(), \
+        #         'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy(), 'delta_sub': delta_out.cpu().numpy(), 'apd_sub': ap_delta.cpu().numpy(), \
+        #             'apd_pred': apd_pred.cpu().numpy()})
 
     # Ground_truth_mse = MSE(model(a+delta), solver(a+delta))
     # get_ground_truth_mse(model, ap_delta, 'data/burgers_N2048_G8192_gen.mat', 'u', ntest, sub )
 
     # Get the attacked_mse = MSE (model(a+delta), solver(b_j))
-    get_attack_mse(model, ap_delta, u_prime.cuda(), ntest)
+    # get_attack_mse(model, ap_delta, u_prime.cuda(), ntest)
 
 
 
