@@ -1,5 +1,5 @@
 import torch
-
+from utilities3 import MatReader
 import math
 
 import matplotlib.pyplot as plt
@@ -19,6 +19,8 @@ import scipy.io
 #T: final time
 #delta_t: internal time-step for solve (descrease if blow-up)
 #record_steps: number of in-time snapshots to record
+
+# TODO: make this read in the apd data from the above and solve it and save its output
 def navier_stokes_2d(w0, f, visc, T, delta_t=1e-4, record_steps=1):
 
     #Grid size - must be power of 2
@@ -124,13 +126,23 @@ def navier_stokes_2d(w0, f, visc, T, delta_t=1e-4, record_steps=1):
 
 
 device = torch.device('cuda')
+TEST_PATH = '/gpfs/u/home/MPFS/MPFSadsj/barn/dev/Externship/fourier_neural_operator/pred/a_p_delta_navier_N100_G64_e05.mat'
+
+T = 10
+T_in = 30
+reader = MatReader(TEST_PATH)
+apd = reader.read_field('apd')[:,:,:,-T:].squeeze()
+test_u = reader.read_field('test_u')[:,:,:,:]
+w1 = torch.cat((apd, test_u), dim=-1)
+print("w1: ",w1.shape)
+
 
 #Resolution
-s = 256
+s = 64 #256
 sub = 1
 
 #Number of solutions to generate
-N = 20 #1000
+N = 100 #20
 
 #Set up 2d GRF with covariance parameters
 GRF = GaussianRF(2, s, alpha=2.5, tau=7, device=device)
@@ -143,7 +155,7 @@ X,Y = torch.meshgrid(t, t)
 f = 0.1*(torch.sin(2*math.pi*(X + Y)) + torch.cos(2*math.pi*(X + Y)))
 
 #Number of snapshots from solution
-record_steps = 200
+record_steps = T + T_in# 200
 
 #Inputs
 a = torch.zeros(N, s, s)
@@ -160,12 +172,14 @@ t0 =default_timer()
 for j in range(N//bsize):
 
     #Sample random feilds
-    w0 = GRF.sample(bsize)
-    T = 50.0
-    visc = 1e-3
+    #w0 = GRF.sample(bsize)
+    w0 = w1[j*bsize:(j+1)*bsize, :,:,0].squeeze().cuda()
+    print('w0: ',w0.shape, 'f: ', f.shape, record_steps) # [20, 64, 64], [64, 64], 40
+    print(j*bsize, (j+1)*bsize)
 
     #Solve NS
-    sol, sol_t = navier_stokes_2d(w0, f, visc, T, 1e-4, record_steps)
+    sol, sol_t = navier_stokes_2d(w0, f, 1e-3, 50.0, 1e-4, record_steps)
+    print('sol: ',sol.shape)
 
     a[c:(c+bsize),...] = w0
     u[c:(c+bsize),...] = sol
@@ -174,4 +188,4 @@ for j in range(N//bsize):
     t1 = default_timer()
     print(j, c, t1-t0)
 
-scipy.io.savemat(f'navier_N{N}_T{int(T)}_v{visc}.mat', mdict={'a': a.cpu().numpy(), 'u': u.cpu().numpy(), 't': sol_t.cpu().numpy()})
+scipy.io.savemat('ns_data_s64_t50_e05.mat', mdict={'a': a.cpu().numpy(), 'u': u.cpu().numpy(), 't': sol_t.cpu().numpy()})

@@ -1,8 +1,14 @@
-%Radom function from N(m, C) on [0 1] where
-%C = sigma^2(-Delta + tau^2 I)^(-gamma)
-%with periodic, zero dirichlet, and zero neumann boundary.
-%Dirichlet only supports m = 0.
-%N is the # of Fourier modes, usually, grid size / 2.
+% Radom function from N(m, C) on [0 1] where
+% C = sigma^2(-Delta + tau^2 I)^(-gamma)
+% with periodic, zero dirichlet, and zero neumann boundary.
+% Dirichlet only supports m = 0.
+% N is the # of Fourier modes, usually, grid size / 2.
+
+% u_0 is generated as a gausian random field, \nu = 0.1
+% m = starting point
+% mu = mean
+% std = sigma
+
 function u = GRF1(N, m, gamma, tau, sigma, type)
 
 if type == "dirichlet"
@@ -33,12 +39,17 @@ end
 
 a = alpha/2;
 b = -beta/2;
-
-c = [flipud(a) - flipud(b).*1i;m + 0*1i;a + b.*1i];
+% flip the order of the matrices
+c = [flipud(a) - flipud(b).*1i;m + 0*1i;a + b.*1i]; % [8193 X 1]
 
 if type == "periodic"
     uu = chebfun(c, [0 1], 'trig', 'coeffs');
+    % c = [rev(alpha/2) + rev(beta/2)i ] - 4096
+    %     [m + 0i                      ] - 1
+    %     [alpha/2 (-beta/2)i          ] - 4096
+    %  u = uu(t - 0.5)
     u = chebfun(@(t) uu(t - 0.5), [0 1], 'trig');
+    %fprintf('uu: %f, u: %f ', range(uu), range(u))
 else
     uu = chebfun(c, [-pi pi], 'trig', 'coeffs');
     u = chebfun(@(t) uu(pi*t), [0 1]);
