@@ -235,7 +235,7 @@ def main() -> None:
     alpha = eps/ num_iter
 
     # delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, eps, alpha, num_iter)
-    delta_norm = pgd_l2(model, test_a, test_u, eps, alpha, num_iter)
+    delta_norm = pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
     #pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
 
     model_apd_u = get_apd_pred(model, apd_norm, test_u)
