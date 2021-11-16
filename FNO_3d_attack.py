@@ -172,6 +172,9 @@ def main() -> None:
     test_a = train_buff[-ntest:,::sub,::sub,:T_in]
     test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
 
+    test_a = train_buff[-ntest:,::sub,::sub,:T_in]
+    test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
+    del train_buff
 
     print("ABJ: before normalization", test_a.shape)
     a_normalizer = UnitGaussianNormalizer(test_a)
@@ -193,7 +196,6 @@ def main() -> None:
 
     test_a = torch.cat((gridx.repeat([ntest,1,1,1,1]), gridy.repeat([ntest,1,1,1,1]),
                         gridt.repeat([ntest,1,1,1,1]), test_a), dim=-1)
-    # print("ABJ 0.05", test_a.shape)
 
     test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
 
@@ -245,10 +247,8 @@ def main() -> None:
     pred = y_normalizer.decode(pred)
     model_apd_u = y_normalizer.decode(model_apd_u)
 
-    test_a = train_buff[-ntest:,::sub,::sub,:T_in]
-    test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
 
-    # life apd back to the expected dimensions
+    # lift apd back to the expected dimensions
     scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict={'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy(),'apd': apd.cpu().numpy(), \
     'model_apd_u': model_apd_u.cpu().numpy(), 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy()})
 
