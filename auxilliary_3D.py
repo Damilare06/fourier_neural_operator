@@ -80,6 +80,7 @@ def pgd_linf(model, loader, attack, attack_name, xtest, *args):
     return delta_arr[:,:,:,:,:], a_plus_delta
 
 def norms(Z):
+    """ Compute the norms over all but the first dimension"""
     return Z.view(Z.shape[0], -1).norm(dim=1)[:,None,None,None,None]
 
 def pgd_l2(model, X, y, epsilon, alpha, num_iter):
@@ -88,7 +89,7 @@ def pgd_l2(model, X, y, epsilon, alpha, num_iter):
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         loss.backward()
-        print("ABJ norm: ", delta.grad.detach().shape, norms(delta.grad.detach()).shape)
+        # print("ABJ norm: ", delta.grad.detach().shape, norms(delta.grad.detach()).shape)
         delta.data += alpha*delta.grad.detach() / norms(delta.grad.detach())
         delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
         delta.data *= epsilon / norms(delta.detach()).clamp(min=epsilon)
