@@ -165,18 +165,18 @@ def main() -> None:
     ################################################################
     # load data and data normalization
     ################################################################
-    ADV_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/matlab/Burgers eqn/data_generation/navier_stokes/ns_data_s64_t50_e10.mat'
+    ADV_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/matlab/Burgers eqn/data_generation/navier_stokes/ns_data_s64_t50_e50.mat'
     reader = MatReader(TEST_PATH)
     train_buff = reader.read_field('u')[-ntest:,:,:,:]
+    del reader
 
     test_a = train_buff[-ntest:,::sub,::sub,:T_in]
     test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
 
-    test_a = train_buff[-ntest:,::sub,::sub,:T_in]
-    test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
+    save_dict = {'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy()}
     del train_buff
 
-    print("ABJ: before normalization", test_a.shape)
+    # print("ABJ: before normalization", test_a.shape)
     a_normalizer = UnitGaussianNormalizer(test_a)
     test_a = a_normalizer.encode(test_a)
 
@@ -185,7 +185,6 @@ def main() -> None:
 
     test_a = test_a.reshape(ntest,S,S,1,T_in).repeat([1,1,1,T,1])
 
-    print("ABJ 0.04", test_a.shape)
     # pad locations (x,y,t)
     gridx = torch.tensor(np.linspace(0, 1, S), dtype=torch.float)
     gridx = gridx.reshape(1, S, 1, 1, 1).repeat([1, 1, S, T, 1])
@@ -197,7 +196,7 @@ def main() -> None:
     test_a = torch.cat((gridx.repeat([ntest,1,1,1,1]), gridy.repeat([ntest,1,1,1,1]),
                         gridt.repeat([ntest,1,1,1,1]), test_a), dim=-1)
 
-    test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
+    #test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(test_a, test_u), batch_size=batch_size, shuffle=False)
 
     device = torch.device('cuda')
 
@@ -231,14 +230,21 @@ def main() -> None:
     # scipy.io.savemat('pred/navier_test.mat', mdict={'pred': pred.cpu().numpy()})
 
     # TODO: Perturb the eps and generate new points
-    eps = 1
+    eps = 5
     num_iter = 10
     restarts = 10
     alpha = eps/ num_iter
 
+    del x, y, out, test_mse, mse
+    del test_loader
+
     # delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, eps, alpha, num_iter)
-    delta_norm = pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
-    #pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
+    # delta_norm, apd_norm = pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
+    delta_norm = torch.zeros(test_a.shape)
+    apd_norm = torch.zeros(test_a.shape)
+    n = int(ntest/2)
+    for i in range(2):
+        delta_norm[n*i:n*(i+1),:], apd_norm[n*i:n*(i+1),:] = pgd_l2(model, test_a[(n*i):(n*(i+1)),:].cuda(), test_u[(n*i):(n*(i+1)),:].cuda(), eps, alpha, num_iter)
 
     model_apd_u = get_apd_pred(model, apd_norm, test_u)
 
@@ -247,10 +253,13 @@ def main() -> None:
     pred = y_normalizer.decode(pred)
     model_apd_u = y_normalizer.decode(model_apd_u)
 
-
     # lift apd back to the expected dimensions
-    scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict={'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy(),'apd': apd.cpu().numpy(), \
-    'model_apd_u': model_apd_u.cpu().numpy(), 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy()})
+    save_dict['model_apd_u'] = model_apd_u.cpu().numpy()
+    save_dict['delta'] = delta.cpu().numpy()
+    save_dict['y_pred'] = pred.cpu().numpy()
+    scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict= save_dict)
+    #scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict={'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy(),'apd': apd.cpu().numpy(), \
+    #'model_apd_u': model_apd_u.cpu().numpy(), 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy()})
 
     reader2 = MatReader(ADV_PATH)
     adv_buff = reader2.read_field('u')[-ntest:,::sub,::sub,:]

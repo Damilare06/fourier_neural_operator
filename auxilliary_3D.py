@@ -89,9 +89,8 @@ def pgd_l2(model, X, y, epsilon, alpha, num_iter):
         yp = model(X + delta)
         loss = F.mse_loss(yp.squeeze(), y.squeeze())
         loss.backward()
-        # print("ABJ norm: ", delta.grad.detach().shape, norms(delta.grad.detach()).shape)
         delta.data += alpha*delta.grad.detach() / norms(delta.grad.detach())
-        delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
+        #delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
         delta.data *= epsilon / norms(delta.detach()).clamp(min=epsilon)
         delta.grad.zero_()        
     
