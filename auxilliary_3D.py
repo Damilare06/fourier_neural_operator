@@ -52,30 +52,37 @@ def mse_linf_rand_attack(model, X, y, epsilon, alpha, num_iter, restarts):
 
     return max_delta
 
-def pgd_linf(model, loader, attack, attack_name, xtest, *args):
-    total_loss = 0.
+def pgd_linf(model, loader, attack, attack_name, xtest, pred, adv_solver=False, *args):
+    total_loss_p, total_loss_g = 0., 0.
     index = 0
     a_plus_delta = torch.zeros_like(xtest)
     delta_arr = torch.zeros_like(xtest)
 
-    for X, y in loader:
-        X, y = X.cuda(), y.cuda()
-        delta = attack(model, X, y.squeeze(), *args)
-        # print(X.shape, y.shape, delta.shape)
-
-        # zero out the loc_delta index
+    for X, y_s in loader:
+        X = X.cuda()
+        y_m = (pred[index]).squeeze().cuda()
+        delta = attack(model, X.cuda(), y_m, *args)
         delta[:,:,:,:,:3] = 0
 
         yp = model(X + delta)
-        loss = F.mse_loss(yp.squeeze(), y.squeeze())
+        loss_p = F.mse_loss(yp.squeeze(), y_m) 
+        total_loss_p += loss_p
+
+        if adv_solver:
+            y_s = y_s.squeeze().cuda()
+            loss_g = F.mse_loss(yp.squeeze(), y_s) 
+            total_loss_g += loss_g
         
-        total_loss += loss
         a_plus_delta[index,:,:,:,:] = X + delta
         delta_arr[index,:,:,:,:] = delta
 
         index += 1
-    output =  total_loss / len(loader.dataset)
-    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {output :.6f} ")
+    proxy_loss =  total_loss_p / len(loader.dataset)
+    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {proxy_loss :.6f} ")
+
+    if adv_solver:
+        ground_loss =  total_loss_g / len(loader.dataset)
+        print(f"The ground_truth loss => MSE(model(a + delta), solver(a) = : {ground_loss :.6f} ")
 
     return delta_arr[:,:,:,:,:], a_plus_delta
 
@@ -83,7 +90,24 @@ def norms(Z):
     """ Compute the norms over all but the first dimension"""
     return Z.view(Z.shape[0], -1).norm(dim=1)[:,None,None,None,None]
 
-def pgd_l2(model, X, y, epsilon, alpha, num_iter):
+def pgd_l2(model, X, y_s, pred, epsilon, alpha, num_iter, adv_solver=False):
+    delta = torch.zeros_like(X, requires_grad=True)
+    y_m = pred.squeeze().cuda()
+    for t in range(num_iter):
+        yp = model(X + delta)
+        loss = F.mse_loss(yp.squeeze(), y_m)
+        loss.backward()
+        delta.data += alpha*delta.grad.detach() / norms(delta.grad.detach())
+        #delta.data = torch.min(torch.max(delta.detach(), -X), 1-X) # clip X+delta to [0,1]
+        delta.data *= epsilon / norms(delta.detach()).clamp(min=epsilon)
+        delta.grad.zero_()        
+    
+    delta = delta.detach()
+    delta[:,:,:,:,:3] = 0
+    a_plus_delta = X + delta
+    return delta.cpu(), a_plus_delta.cpu()
+
+def pgd_l2_loop(model, X, y, epsilon, alpha, num_iter):
     delta = torch.zeros_like(X, requires_grad=True)
     for t in range(num_iter):
         yp = model(X + delta)
@@ -97,9 +121,30 @@ def pgd_l2(model, X, y, epsilon, alpha, num_iter):
     delta = delta.detach()
     delta[:,:,:,:,:3] = 0
     a_plus_delta = X + delta
-    # delta = delta[:,:,0].squeeze()
     return delta.cpu(), a_plus_delta.cpu()
 
+def pgd_l2_losses(model, a, u, apd, pred, ntest, adv_solver=False):
+    total_loss_p, total_loss_g = 0., 0.
+    index = 0
+    for x, y_s in zip(a, u):
+        y_m = (pred[index]).squeeze().cuda()
+        
+        yp = model(apd[index])
+        loss_p = F.mse_loss(yp.squeeze(), y_m) 
+        total_loss_p += loss_p
+
+        if adv_solver:
+            y_s = y_s.squeeze().cuda()
+            loss_g = F.mse_loss(yp.squeeze(), y_s) 
+            total_loss_g += loss_g
+
+        index += 1
+    proxy_loss =  total_loss_p / len(loader.dataset)
+    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {proxy_loss :.6f} ")
+
+    if adv_solver:
+        ground_loss =  total_loss_g / len(loader.dataset)
+        print(f"The ground_truth loss => MSE(model(a + delta), solver(a) = : {ground_loss :.6f} ")
 
 def show_burgers_overlap(var1, var2, key1, key2):
     cm = plt.cm.get_cmap('viridis')

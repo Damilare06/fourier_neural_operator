@@ -165,15 +165,13 @@ def main() -> None:
     ################################################################
     # load data and data normalization
     ################################################################
-    ADV_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/matlab/Burgers eqn/data_generation/navier_stokes/ns_data_s64_t50_e50.mat'
+    ADV_PATH = '/gpfs/u/home/MPFS/MPFSadsj/scratch/matlab/Burgers eqn/data_generation/navier_stokes/ns_data_s64_t50_e05.mat'
     reader = MatReader(TEST_PATH)
     train_buff = reader.read_field('u')[-ntest:,:,:,:]
     del reader
 
     test_a = train_buff[-ntest:,::sub,::sub,:T_in]
     test_u = train_buff[-ntest:,::sub,::sub,T_in:T+T_in]
-
-    save_dict = {'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy()}
     del train_buff
 
     # print("ABJ: before normalization", test_a.shape)
@@ -205,7 +203,7 @@ def main() -> None:
     # training and evaluation
     ################################################################
     model = torch.load('model/navier_test').eval()
-    print(count_params(model))
+    #print(count_params(model))
     
     # Evaluation - the foolbox accuracy loss is for classification
     pred = torch.zeros(test_u.shape)
@@ -223,51 +221,47 @@ def main() -> None:
 
             mse = F.mse_loss(out.cuda().view(batch_size, -1), y.view(batch_size, -1), reduction='mean')            
             test_mse += mse.item()
-            # print(index, test_mse)
-            index = index + 1
+            index += 1
     test_mse /= ntest
     print(f"test_mse loss before attack: {test_mse :.6f} ")
     # scipy.io.savemat('pred/navier_test.mat', mdict={'pred': pred.cpu().numpy()})
 
     # TODO: Perturb the eps and generate new points
-    eps = 5
+    eps = .05
     num_iter = 10
     restarts = 10
     alpha = eps/ num_iter
+    adv_solver = True
 
-    del x, y, out, test_mse, mse
-    del test_loader
+    del x, y, out, test_mse, mse, gridx, gridy, gridt
 
-    # delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, eps, alpha, num_iter)
-    # delta_norm, apd_norm = pgd_l2(model, test_a.cuda(), test_u.cuda(), eps, alpha, num_iter)
+    # adv_solv flag is set to True for adversarial data from solver
+    #delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, pred, adv_solver, eps, alpha, num_iter)
+
+    #delta_norm, apd_norm = pgd_l2(model, test_a.cuda(), test_u, pred, eps, alpha, num_iter, adv_solver)
     delta_norm = torch.zeros(test_a.shape)
     apd_norm = torch.zeros(test_a.shape)
     n = int(ntest/2)
     for i in range(2):
-        delta_norm[n*i:n*(i+1),:], apd_norm[n*i:n*(i+1),:] = pgd_l2(model, test_a[(n*i):(n*(i+1)),:].cuda(), test_u[(n*i):(n*(i+1)),:].cuda(), eps, alpha, num_iter)
+        delta_norm[n*i:n*(i+1),:], apd_norm[n*i:n*(i+1),:] = pgd_l2_loop(model, test_a[(n*i):(n*(i+1)),:].cuda(), test_u[(n*i):(n*(i+1)),:].cuda(), eps, alpha, num_iter)
 
-    model_apd_u = get_apd_pred(model, apd_norm, test_u)
+    #model_apd_u = get_apd_pred(model, apd_norm, test_u)
 
-    delta = a_normalizer.decode(delta_norm[:,:,:,29,3:].squeeze())
-    apd = a_normalizer.decode(apd_norm[:,:,:,29,3:].squeeze())
-    pred = y_normalizer.decode(pred)
-    model_apd_u = y_normalizer.decode(model_apd_u)
+    #delta = a_normalizer.decode(delta_norm[:,:,:,29,3:].squeeze())
+    #apd = a_normalizer.decode(apd_norm[:,:,:,29,3:].squeeze())
+    #pred = y_normalizer.decode(pred)
+    #model_apd_u = y_normalizer.decode(model_apd_u)
 
-    # lift apd back to the expected dimensions
-    save_dict['model_apd_u'] = model_apd_u.cpu().numpy()
-    save_dict['delta'] = delta.cpu().numpy()
-    save_dict['y_pred'] = pred.cpu().numpy()
-    scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict= save_dict)
+    ## lift apd back to the expected dimensions
     #scipy.io.savemat('pred/a_p_delta_navier_N100_G64_e10.mat', mdict={'test_a': test_a.cpu().numpy(), 'test_u': test_u.cpu().numpy(),'apd': apd.cpu().numpy(), \
     #'model_apd_u': model_apd_u.cpu().numpy(), 'delta': delta.cpu().numpy(), 'y_pred': pred.cpu().numpy()})
 
-    reader2 = MatReader(ADV_PATH)
-    adv_buff = reader2.read_field('u')[-ntest:,::sub,::sub,:]
+    #reader2 = MatReader(ADV_PATH)
+    #adv_buff = reader2.read_field('u')[-ntest:,::sub,::sub,:]
 
-    adv_a = adv_buff[:,:,:,:T_in]
-    solver_apd_u = adv_buff[:,:,:,T_in:T+T_in]
-    # print(model_apd_u.shape, solver_apd_u.shape)
-    get_ground_truth_mse(model_apd_u, solver_apd_u, ntest)
+    #adv_a = adv_buff[:,:,:,:T_in]
+    #solver_apd_u = adv_buff[:,:,:,T_in:T+T_in]
+    #get_ground_truth_mse(model_apd_u, solver_apd_u, ntest)
 
 
 
