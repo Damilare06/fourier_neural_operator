@@ -236,16 +236,16 @@ def main() -> None:
     del x, y, out, test_mse, mse, gridx, gridy, gridt
 
     # adv_solv flag is set to True for adversarial data from solver
-    #delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, pred, adv_solver, eps, alpha, num_iter)
+    # delta_norm, apd_norm = pgd_linf(model, test_loader, mse_attack, "mse_attack", test_a, pred, adv_solver, eps, alpha, num_iter)
 
-    #delta_norm, apd_norm = pgd_l2(model, test_a.cuda(), test_u, pred, eps, alpha, num_iter, adv_solver)
     delta_norm = torch.zeros(test_a.shape)
     apd_norm = torch.zeros(test_a.shape)
     n = int(ntest/2)
     for i in range(2):
         delta_norm[n*i:n*(i+1),:], apd_norm[n*i:n*(i+1),:] = pgd_l2_loop(model, test_a[(n*i):(n*(i+1)),:].cuda(), test_u[(n*i):(n*(i+1)),:].cuda(), eps, alpha, num_iter)
-
-    #model_apd_u = get_apd_pred(model, apd_norm, test_u)
+    pgd_l2_losses(model, test_a.cuda(), test_u.cuda(), apd_norm.cuda(), pred, adv_solver)
+    
+    model_apd_u = get_apd_pred(model, apd_norm, test_u)
 
     #delta = a_normalizer.decode(delta_norm[:,:,:,29,3:].squeeze())
     #apd = a_normalizer.decode(apd_norm[:,:,:,29,3:].squeeze())

@@ -82,7 +82,7 @@ def pgd_linf(model, loader, attack, attack_name, xtest, pred, adv_solver=False, 
 
     if adv_solver:
         ground_loss =  total_loss_g / len(loader.dataset)
-        print(f"The ground_truth loss => MSE(model(a + delta), solver(a) = : {ground_loss :.6f} ")
+        print(f"The ground_truth loss => MSE(model(a + delta), solver(a + delta) = : {ground_loss :.6f} ")
 
     return delta_arr[:,:,:,:,:], a_plus_delta
 
@@ -123,13 +123,14 @@ def pgd_l2_loop(model, X, y, epsilon, alpha, num_iter):
     a_plus_delta = X + delta
     return delta.cpu(), a_plus_delta.cpu()
 
-def pgd_l2_losses(model, a, u, apd, pred, ntest, adv_solver=False):
+def pgd_l2_losses(model, a, u, apd, pred, adv_solver=False):
     total_loss_p, total_loss_g = 0., 0.
     index = 0
     for x, y_s in zip(a, u):
         y_m = (pred[index]).squeeze().cuda()
+        ap = torch.unsqueeze(apd[index],0)
         
-        yp = model(apd[index])
+        yp = model(ap)
         loss_p = F.mse_loss(yp.squeeze(), y_m) 
         total_loss_p += loss_p
 
@@ -139,12 +140,12 @@ def pgd_l2_losses(model, a, u, apd, pred, ntest, adv_solver=False):
             total_loss_g += loss_g
 
         index += 1
-    proxy_loss =  total_loss_p / len(loader.dataset)
-    print(f"The proxy {attack_name} error => MSE(model(a + delta), model(a)) = : {proxy_loss :.6f} ")
+    proxy_loss =  total_loss_p / a.shape[0]
+    print(f"The proxy error => MSE(model(a + delta), model(a)) = : {proxy_loss :.6f} ")
 
     if adv_solver:
-        ground_loss =  total_loss_g / len(loader.dataset)
-        print(f"The ground_truth loss => MSE(model(a + delta), solver(a) = : {ground_loss :.6f} ")
+        ground_loss =  total_loss_g / a.shape[0]
+        print(f"The ground_truth loss => MSE(model(a + delta), solver(a + delta) = : {ground_loss :.6f} ")
 
 def show_burgers_overlap(var1, var2, key1, key2):
     cm = plt.cm.get_cmap('viridis')
